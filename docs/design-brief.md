@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Build a local-first CLI that consolidates, compresses, and simplifies behavioral
+Build a locally operated CLI that consolidates, compresses, and simplifies behavioral
 directives used by Claude Code and OpenAI Codex. Its job is conflict resolution,
 not summary-by-deletion: it must replace obsolete or contradictory rules with a
 smaller coherent set while retaining recoverable provenance.

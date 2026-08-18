@@ -1,10 +1,14 @@
 # Meditate
 
-Meditate is a local-first CLI for consolidating the behavioral directives that
+[Documentation](https://jmcentire.github.io/meditate/) ·
+[Privacy](PRIVACY.md) ·
+[Design brief](docs/design-brief.md)
+
+Meditate is a locally operated CLI for consolidating the behavioral directives that
 Claude Code and OpenAI Codex load. It targets the actual failure mode: corrections
 are commonly appended as new exceptions while the obsolete rule remains in place.
 
-Meditate does not hand an LLM your instruction file and accept a rewrite. It:
+Meditate does not let an LLM directly regenerate or write your instruction file. It:
 
 1. segments configured instruction files into locally identified directives;
 2. streams Claude/Codex history and auto-memory through local secret detection;
@@ -132,7 +136,9 @@ erased” is distinguishable from “never existed” or “corrupt.”
 ```
 
 The tests use synthetic histories only. See [the design brief](docs/design-brief.md)
-for authority, transaction, and acceptance contracts.
+for authority, transaction, and acceptance contracts. The dependency-free static
+documentation site lives in `docs/` and is published from `main:/docs` at
+<https://jmcentire.github.io/meditate/>.
 
 The first attended Claude pass on 2026-08-18 inspected 15,531 unique evidence
 events, selected 180 within budget, excluded nine secret-bearing records wholesale,

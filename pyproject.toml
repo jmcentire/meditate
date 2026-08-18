@@ -23,6 +23,12 @@ classifiers = [
   "Topic :: Software Development :: Quality Assurance",
 ]
 
+[project.urls]
+Homepage = "https://jmcentire.github.io/meditate/"
+Documentation = "https://jmcentire.github.io/meditate/"
+Repository = "https://github.com/jmcentire/meditate"
+Issues = "https://github.com/jmcentire/meditate/issues"
+
 [project.optional-dependencies]
 dev = [
   "mypy>=1.14",

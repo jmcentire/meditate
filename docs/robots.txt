@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jmcentire.github.io/meditate/sitemap.xml

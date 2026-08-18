@@ -1,0 +1,73 @@
+# Meditate: full agent reference
+
+Canonical docs: https://jmcentire.github.io/meditate/
+Source: https://github.com/jmcentire/meditate
+Version described: 0.1.x alpha
+License: MIT
+Runtime: Python 3.11+
+
+## Purpose
+
+Meditate consolidates, compresses, and simplifies behavioral directives loaded by Claude Code and OpenAI Codex. Its target failure mode is monotonic append: after a correction, an agent adds a new exception without revising the rule that caused the failure. Contradiction is the symptom; missing replacement relations are the mechanism.
+
+Meditate is not a generic provider-state, vector-store, workspace, tool-side-effect, or model-weight scrubber. It addresses locally inspectable instruction files and learned behavioral directives.
+
+## Authority and temporal ordering
+
+Authority, scope, supersession, recency, and corroboration are separate dimensions. An explicit user correction can outrank a newer assistant-authored summary. Within comparable authority and scope, newer applicable evidence is preferred, but older supporting and conflicting evidence remains in lineage. Recency is a decay weight, not an age cutoff.
+
+Default durable evidence order:
+
+1. Explicit user correction or reversal with an identifiable antecedent.
+2. Current version-controlled instruction, qualified by scope.
+3. Repeated user preference across independent sessions.
+4. Deterministic outcome evidence tied to the proposed rule.
+5. Active Kindex constraint, directive, or decision with provenance.
+6. Agent auto-memory or summary.
+7. Assistant conclusion or unverified inferred lesson.
+
+A one-off historical imperative is session evidence, not automatically a durable global policy.
+
+## Source and write boundaries
+
+Configured readable sources may include Claude/Codex instruction files, prompt indexes, opt-in transcript JSONL, auto-memory, and active Kindex knowledge. History, memory, and Kindex are read-only evidence. Writable paths must be exact configured targets. Symlinked targets are refused by default.
+
+Before a model call, evidence is streamed, deduplicated, classified, secret-scanned, locally redacted, ranked, and bounded. High-confidence secret-bearing records are excluded wholesale. Older temporal breadth is reserved during selection.
+
+The Anthropic request contains the system prompt, constrained JSON output schema, and a canonical JSON packet. The packet includes configured target path labels and hashes; current directive IDs, headings, scopes, and locally secret-scanned/redacted text; selected evidence IDs, timestamps, source/authority/scoring metadata, and redacted text in temporal order; the authority/comparison rules; allowed targets; overlap candidates; and degradation state. It does not include unselected or wholesale-excluded history records. The transmitted material is still user-derived content and is not claimed to be anonymous or risk-free.
+
+The model receives locally minted directive and evidence IDs and must return a total disposition: every current directive is kept, replaced, removed, or relocated exactly once. Local validation rejects unknown IDs, missing dispositions, invented quotes, unsupported destinations, unresolved conflicts, secret matches, excessive churn, source/config drift, protected-section edits, ambiguous new high-impact authority, or truncated output.
+
+## Commands
+
+meditate init
+  Write a commented TOML configuration.
+
+meditate inspect [--json]
+  Local-only inventory and overlap candidates. No model call. No target mutation.
+
+meditate plan [--model ID] [--effort LEVEL] [token-limit flags]
+  Build a sanitized evidence packet, call the exact configured Anthropic model, validate operations, and archive a read-only proposal/report. No target mutation.
+
+meditate apply RUN_ID --approve PLAN_SHA256
+  Revalidate source/config hashes, verify the archive, bind approval to the exact plan, then replace allowlisted target files atomically.
+
+meditate restore RUN_ID [--force] [--recover]
+  Restore archived pre-images. Later hand edits block normal restore; forced restore archives diverged bytes first.
+
+meditate run [planning flags] [--apply]
+  Inspect and plan. Dry-run by default. Unattended mutation additionally requires explicit configuration, evidence allowlisting, probation, and mode gates.
+
+meditate cron [--check] [--schedule CRON] [--apply]
+  Print or validate a locked cron invocation. Never edits the crontab.
+
+meditate purge RUN_ID [--execute] [--force]
+  Preview or explicitly erase a named archive. Active recovery material requires force; erasure leaves a tombstone.
+
+## Recovery model
+
+Run archives use SHA-256-addressed blobs and canonical manifests under private XDG data directories. Reports and JSONL summaries live under private XDG state directories. Apply archives and verifies target pre-images before writes, uses same-directory atomic replacement, preserves modes, rechecks hashes, and rolls back changed targets on a later failure. Ambiguous recovery emits a machine-readable receipt rather than guessing.
+
+## Privacy
+
+Meditate has no hosted product service or CLI telemetry. `inspect` is fully local. `plan` and `run` deliberately send current directive text and selected, locally secret-scanned/redacted evidence to the explicitly selected Anthropic model. API keys are read from environment variables and never logged. See https://jmcentire.github.io/meditate/privacy.html for the complete boundary.

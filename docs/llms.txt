@@ -1,0 +1,22 @@
+# Meditate
+
+> Operator-controlled, recoverable consolidation of behavioral directives loaded by Claude Code and OpenAI Codex.
+
+Meditate addresses monotonic instruction append: agents add exception clauses after corrections but rarely replace the obsolete rule. It preserves temporal and source provenance, asks a pinned model for an exact total-disposition plan, validates that plan locally, and archives target bytes before an approved write.
+
+## Canonical documentation
+
+- [Documentation](https://jmcentire.github.io/meditate/): Overview, workflow, safety model, installation, and command reference
+- [Privacy](https://jmcentire.github.io/meditate/privacy.html): Local processing, provider calls, archives, and telemetry boundaries
+- [Source README](https://github.com/jmcentire/meditate/blob/main/README.md): Detailed operator guide
+- [Design brief](https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md): Authority, evidence, transaction, and acceptance contracts
+- [Full agent reference](https://jmcentire.github.io/meditate/llms-full.txt): Expanded machine-readable product reference
+
+## Important boundaries
+
+- `inspect` is local-only and makes no model call.
+- `plan` never mutates instruction targets, but it sends current directive text and selected, locally secret-scanned/redacted evidence to the pinned Anthropic model.
+- Model output is untrusted and cannot mint paths or durable IDs.
+- `apply` requires exact plan-hash approval and archive-before-write.
+- Raw histories, auto-memory, and Kindex are read-only evidence.
+- Meditate is alpha software and is not a universal agent-state scrubber.
