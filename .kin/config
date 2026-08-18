@@ -1,0 +1,54 @@
+name: meditate
+audience: private
+description: >
+  Recoverable consolidation of Claude and Codex behavioral directives from
+  instruction files, agent memories, interaction evidence, and Kindex.
+
+domains:
+  - agent-state
+  - instruction-hygiene
+  - temporal-reasoning
+  - llm-tooling
+  - provenance
+
+voice:
+  tone: direct, evidence-led, and conservative around destructive changes
+  principles:
+    - Rewrite contradictory rules instead of appending another exception
+    - Preserve temporal and source provenance for every promoted directive
+    - Keep raw histories local and redact before any model call
+    - Archive first and make every applied rewrite recoverable
+    - Prefer deterministic evidence and explicit user corrections over agent inference
+  anti-patterns:
+    - Uploading raw transcripts to an LLM
+    - Treating file modification time as proof of authority
+    - Deleting old evidence merely because it is old
+    - Silently rewriting live instructions
+    - Claiming a clean consolidation when model or validation work failed
+
+standards:
+  code_review:
+    - Apply is transactional, content-addressed, atomic, and restore-tested
+    - Every model input passes local secret redaction first
+    - Every output directive has evidence lineage and scope
+    - Dry-run is the default; unattended apply requires explicit configuration
+  testing:
+    - Use synthetic Claude and Codex histories; never copy personal logs into fixtures
+    - Cover conflict resolution, temporal ordering, redaction, TOCTOU, restore, and cron locking
+
+connects_to:
+  - kindex
+  - advocate
+  - constrain
+  - simulacrum
+
+work_policy:
+  require_active_tag: false
+  linear:
+    enabled: false
+    require_issue: false
+  git:
+    block_commit_without_tag: false
+    block_commit_without_linear: false
+    block_push_without_tag: false
+    block_push_without_linear: false
