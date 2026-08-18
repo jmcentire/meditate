@@ -5,6 +5,7 @@ from dataclasses import replace
 from conftest import ConfigFactory
 
 from meditate.evidence import build_inspection, detect_overlaps, enrich_events, select_events
+from meditate.imports import build_import_graph
 from meditate.models import Authority, EvidenceEvent, SourceStats
 from meditate.segment import load_targets
 
@@ -153,7 +154,12 @@ def test_target_relevance_keeps_explicit_commit_reversal_amid_unrelated_correcti
         for index in range(40)
     )
     result = build_inspection(
-        load_targets(config), unrelated + (relevant,), SourceStats(), (), config
+        load_targets(config),
+        build_import_graph(config),
+        unrelated + (relevant,),
+        SourceStats(),
+        (),
+        config,
     )
     selected = {item.id: item for item in result.selected_events}
     assert "evt_relevant_commit" in selected

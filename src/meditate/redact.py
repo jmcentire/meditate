@@ -48,6 +48,7 @@ _UUID = re.compile(
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
 )
 _ENTROPY_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_+/=-]{40,}(?![A-Za-z0-9_-])")
+_REDACTION_PLACEHOLDER = re.compile(r"\[REDACTED:[a-z_]+:[0-9a-f]{10}\]")
 
 
 def _placeholder(kind: str, value: str) -> str:
@@ -127,6 +128,7 @@ def surviving_high_confidence(text: str) -> tuple[RedactionFinding, ...]:
     """Return high-confidence shapes still present after sanitization."""
 
     findings: list[RedactionFinding] = []
+    placeholder_spans = tuple(match.span() for match in _REDACTION_PLACEHOLDER.finditer(text))
     for kind, pattern in (
         ("private_key", _PEM),
         ("credential_header", _HEADER),
@@ -136,7 +138,11 @@ def surviving_high_confidence(text: str) -> tuple[RedactionFinding, ...]:
         ("url_userinfo", _URL_USERINFO),
     ):
         for match in pattern.finditer(text):
+            if any(
+                match.start() < placeholder_end and placeholder_start < match.end()
+                for placeholder_start, placeholder_end in placeholder_spans
+            ):
+                continue
             value = match.group(0)
-            if "[REDACTED:" not in value:
-                findings.append(_finding(kind, "high", value))
+            findings.append(_finding(kind, "high", value))
     return tuple(findings)

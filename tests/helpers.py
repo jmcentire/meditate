@@ -6,6 +6,7 @@ from typing import Any
 
 from meditate.config import Config
 from meditate.evidence import build_inspection
+from meditate.imports import build_import_graph
 from meditate.models import EvidenceEvent, InspectionResult, RunUsage, SourceStats
 from meditate.segment import load_targets
 
@@ -40,7 +41,14 @@ class StubProvider:
 
 
 def inspection(config: Config, events: tuple[EvidenceEvent, ...]) -> InspectionResult:
-    return build_inspection(load_targets(config), events, SourceStats(), (), config)
+    return build_inspection(
+        load_targets(config),
+        build_import_graph(config),
+        events,
+        SourceStats(),
+        (),
+        config,
+    )
 
 
 def replace_matching(
@@ -73,6 +81,9 @@ def replace_matching(
                         "evidence": [{"id": evidence["id"], "quote": evidence["text"]}],
                         "reason": "The cited newer user correction replaces the old behavior.",
                         "minimum_apply_mode": "attended",
+                        "relocation_basis": "",
+                        "enforcement_target": "",
+                        "deterministic_check": "",
                     }
                 )
         return {

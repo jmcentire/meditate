@@ -141,11 +141,15 @@ class AnthropicProvider:
         stop_reason = str(response.stop_reason or "")
         if stop_reason == "max_tokens":
             fail("provider_truncated", f"Anthropic model {self.model} exhausted max_output_tokens")
+        response_model = getattr(response, "model", "")
         usage = RunUsage(
             calls=1,
             actual_input_tokens=int(getattr(response.usage, "input_tokens", 0)),
             actual_output_tokens=int(getattr(response.usage, "output_tokens", 0)),
             stop_reason=stop_reason,
+            model_id=(
+                response_model if isinstance(response_model, str) and response_model else self.model
+            ),
         )
         return "".join(pieces), usage
 

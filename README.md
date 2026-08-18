@@ -8,6 +8,10 @@ Meditate is a locally operated CLI for consolidating the behavioral directives t
 Claude Code and OpenAI Codex load. It targets the actual failure mode: corrections
 are commonly appended as new exceptions while the obsolete rule remains in place.
 
+> **Authority before confidence.** A fluent or high-confidence rewrite has no
+> authority of its own. Current instructions, explicit corrections, applicable
+> scope, and named handoff boundaries come before model confidence.
+
 Meditate does not let an LLM directly regenerate or write your instruction file. It:
 
 1. segments configured instruction files into locally identified directives;
@@ -15,11 +19,16 @@ Meditate does not let an LLM directly regenerate or write your instruction file.
 3. preserves temporal order and scores recency without an age cutoff;
 4. gives repeated, independently observed user corrections more weight while
    keeping older supporting and conflicting evidence in the packet;
-5. asks an exact model for a total-disposition operation list;
-6. validates every ID, exact evidence quote, destination, size/churn bound, and
+5. validates Claude `@path` imports and sends imported documents only as sanitized,
+   explicitly read-only context;
+6. asks an exact model for a five-disposition operation list: keep, replace,
+   remove, relocate, or report-only escalate;
+7. validates every ID, exact evidence quote, destination, size/churn bound, and
    secret scan locally, including external verification and explicit authority
    boundaries for newly introduced merge/release/deploy actions;
-7. renders unchanged spans byte-for-byte, archives pre/post images, and writes
+8. binds model/prompt provenance, import graphs, semantic status, and pre/post
+   directive/byte/line metrics into the plan hash;
+9. renders unchanged spans byte-for-byte, archives pre/post images, and writes
    only after an exact plan hash is approved.
 
 Raw histories are read-only. A history record with a high-confidence credential
@@ -40,6 +49,25 @@ The default config is `~/.config/meditate/config.toml`. It targets
 transcript bodies disabled, and enables Kindex when `kin` is available. Add
 `~/.codex/AGENTS.md` to `targets` and `codex` to `sources.agents` to include
 Codex. Every writable file must appear in the exact `targets` allowlist.
+
+Configured `.claude/rules/**/*.md` targets may declare a simple YAML frontmatter
+`paths:` list. Contextual guidance may relocate only into one of those exact,
+preconfigured scoped targets; Meditate never invents a glob. For configured
+Claude roots named `CLAUDE.md` or `CLAUDE.local.md`, official `@path` imports are
+resolved recursively to four hops. Relative, absolute, and `~/` imports are
+supported; dangling, circular, over-depth, non-regular, and non-UTF-8 graphs fail
+before the model call. See Claude's official
+[memory semantics](https://code.claude.com/docs/en/memory) and Codex's official
+[AGENTS.md semantics](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+**Import threat boundary.** Meditate faithfully follows each configured Claude
+root's documented relative, absolute, and `~/` `@path` imports, so operators must
+trust those roots and their import graphs. An import may read any process-readable
+file it names. Import-only documents are submitted as immutable context and cannot
+be written through their import role. Recognized secret shapes in imported content
+are redacted locally before provider submission, but pattern redaction is not
+comprehensive and is not a filesystem sandbox. Same-user filesystem compromise is
+outside Meditate's threat boundary.
 
 The Anthropic key lookup order is:
 
@@ -80,6 +108,44 @@ evidence quote, excessive churn, size violation, protected-section edit, changed
 config, changed source file, ambiguous high-impact action gate, or truncated
 provider response blocks apply.
 
+## Structural validation is not behavioral qualification
+
+Every new `plan.json` and `manifest.json` retains `model` as the requested model
+and records `model_id` as the API-returned resolved identifier (falling back to
+the requested identifier only when the response omits it), plus public
+`prompt_version`, SHA-256 of the exact system prompt, and
+`semantic_verification = {"status":"not_run","method":"owner_defined_behavioral_suite"}`.
+The plan hash binds all of them. Apply cross-checks both artifacts and rejects
+local prompt drift.
+
+That chain proves what was proposed and that the local renderer obeyed its
+mechanical constraints. It does **not** prove that consolidated prose preserves
+the behavior of its predecessors. Until an owner authors an independent
+behavioral qualification suite, every mutating operation is attended-only and
+requires the exact plan SHA. `apply --unattended`, `run --apply`, and cron apply
+fail with `semantic_verification_required`; evidence allowlisting cannot upgrade
+semantic status. Human review of the report and diff remains required.
+
+The five dispositions are:
+
+- **keep**: copy the current directive bytes unchanged;
+- **replace**: render a cited replacement at the same location;
+- **remove**: delete a directive only with strong exact evidence;
+- **relocate**: move specific prose to an exact configured target, recording
+  either a `contextual` or `organization` basis;
+- **escalate**: preserve source prose byte-for-byte and report a candidate for a
+  deterministic Claude hook or settings control. It requires two independent
+  evidence groups, is always `candidate_only`, never writes the enforcement
+  surface, and is counted separately from churn and changed directives.
+
+Plan artifacts, JSON/Markdown reports, CLI JSON, and the JSONL summary log expose
+pre/post directive, byte, and line counts plus deltas. A Claude `CLAUDE.md` over
+200 post-plan lines produces a guidance warning, not a claimed vendor hard limit.
+The configured writable Codex `AGENTS*.md` set is checked against
+`project_doc_max_bytes` from the configured Codex home (32,768 bytes by default).
+Coverage is reported as `configured_targets_only`; a pass does not prove every
+cwd-specific Codex instruction chain fits.
+
 ## Model and token controls
 
 `[llm]` in TOML pins the provider/model, effort, maximum calls, per-call input and
@@ -108,14 +174,29 @@ The entry pins the current Python executable, config path, working directory,
 overlap fails closed. The generated job is a dry-run by default: it inspects,
 plans, archives, and reports, but does not rewrite instructions.
 
-`meditate cron --apply` only prints a mutation-capable entry. At runtime it still
-requires all of the following: `--apply`, `allow_unattended_apply = true`, a plan
-whose locally computed minimum mode is unattended, no blocked condition, and the
-configured number of prior successful attended applies. Evidence becomes
-unattended-eligible only when its exact ID from an attended report is listed in
-`apply.unattended_evidence_ids`; editing that list changes the config hash and
-requires a fresh plan. An attended plan hash is never reused as ambient cron
-authority.
+`meditate cron --apply` can still render the explicit command, but runtime
+mutation is unavailable while semantic verification is `not_run`. Cron remains
+a useful inspect/plan/report surface; it cannot supply the missing owner-authored
+behavioral qualification or reuse an attended hash as ambient authority.
+
+## Why not a linter?
+
+Snapshot: 2026-08-18. This is an adjacent, capable category—not an empty one.
+[claudelint](https://claudelint.com/) advertises 116 rules across 10 categories
+and plugin-assisted restructuring;
+[cclint](https://www.npmjs.com/package/@felixgeelhaar/cclint) checks imports,
+hierarchy conflicts, and duplicates; [AgentLint](https://github.com/0xmariowu/AgentLint)
+and [agentlinter.com](https://agentlinter.com/) describe static, AI, and
+session-aware checks and fixes; [Reporails](https://reporails.com/) offers local
+deterministic diagnostics and healing. Meditate's narrower distinction is total
+disposition of the configured directive set, temporal interaction evidence, and
+recoverable exact-hash apply—not a claim that these tools do nothing. “Total”
+means every configured pre-image record receives a disposition, not that every
+possible behavior is covered.
+
+The exact purported title `A Taxonomy of Agent Instruction Failures` by Gloaguen
+et al. was not verified and is not load-bearing. The verified paper is
+[`Coding Agents Don't Know When to Act`](https://arxiv.org/abs/2605.07769).
 
 ## Recovery and erasure
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from meditate.redact import surviving_high_confidence
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -105,3 +108,130 @@ def test_public_docs_do_not_contain_key_material() -> None:
         text = path.read_text(encoding="utf-8")
         for marker in forbidden:
             assert marker not in text, f"{path.name} contains forbidden key marker"
+
+
+class _VisibleTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hidden_depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in {"style", "script"}:
+            self.hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"style", "script"}:
+            self.hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self.hidden_depth:
+            self.parts.append(data)
+
+
+def _visible_text(path: Path) -> str:
+    parser = _VisibleTextParser()
+    parser.feed(path.read_text(encoding="utf-8"))
+    return " ".join(" ".join(parser.parts).split()).lower()
+
+
+def _assert_core_semantic_boundary(text: str, *, surface: str) -> None:
+    dispositions = ("keep", "replace", "remove", "relocate", "escalate")
+    positions = [text.find(disposition) for disposition in dispositions]
+    assert all(position >= 0 for position in positions), (
+        f"{surface}: missing one of five dispositions"
+    )
+    authority_confidence = text.find("authority before confidence")
+    temporal = text.find("temporal")
+    assert authority_confidence >= 0, f"{surface}: missing authority-before-confidence rule"
+    assert temporal >= 0, f"{surface}: missing temporal guidance"
+    assert authority_confidence < temporal, (
+        f"{surface}: authority-before-confidence must precede temporal guidance"
+    )
+    assert "structural validation is not behavioral qualification" in text
+    assert re.search(r"why\s+not\s+(?:just\s+)?a\s+linter", text), (
+        f"{surface}: missing why-not-a-linter comparison"
+    )
+
+
+def test_public_surfaces_document_semantic_scope_import_and_budget_contract() -> None:
+    index = _visible_text(DOCS / "index.html")
+    llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
+    _assert_core_semantic_boundary(index, surface="index.html")
+    _assert_core_semantic_boundary(llms_full, surface="llms-full.txt")
+    assert "illustrative proposal — not a verdict" in index
+    assert "illustration, not behavioral-equivalence proof" in index
+
+    combined = index + "\n" + llms_full
+    assert ".claude/rules" in combined
+    assert "paths:" in combined
+    assert "@path" in combined
+    assert "four hops" in combined or "4 hops" in combined
+    assert "configured_targets_only" in combined or "configured targets only" in combined
+    assert re.search(r"200\s+lines", combined)
+    assert "guidance" in combined and "not a hard" in combined
+    assert (
+        "32768" in combined or "32,768" in combined or "32 kib" in combined or "32 kb" in combined
+    )
+    assert "project_doc_max_bytes" in combined
+
+
+def test_public_docs_disclose_claude_import_filesystem_threat_boundary() -> None:
+    index = _visible_text(DOCS / "index.html")
+    llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
+    combined = index + "\n" + llms_full
+
+    assert re.search(r"configured(?:\s+claude)?\s+roots?\b", combined)
+    assert "import graph" in combined
+    assert (
+        "operator-trusted" in combined
+        or "operator trusted" in combined
+        or re.search(
+            r"operators?\s+must\s+trust.{0,100}roots?.{0,100}(?:import\s+)?graphs?",
+            combined,
+        )
+    )
+
+    for path_form in ("relative", "absolute", "~/"):
+        assert path_form in combined
+    assert "referenced file" in combined or "file it names" in combined
+    assert "process-readable" in combined or re.search(
+        r"readable\s+by\s+(?:the\s+)?(?:meditate\s+)?process",
+        combined,
+    )
+
+    assert re.search(
+        (
+            r"(?:local\s+redaction|redacted\s+locally|pattern[- ]redaction)"
+            r".{0,180}(?:is|does|provides?)?\s*not.{0,60}filesystem\s+sandbox"
+        ),
+        combined,
+    )
+    assert re.search(
+        (
+            r"same[- ]user\s+filesystem\s+compromise"
+            r".{0,100}outside.{0,60}threat\s+(?:model|boundary)"
+        ),
+        combined,
+    )
+
+
+def test_public_surfaces_contain_no_raw_personal_artifacts_or_live_secrets() -> None:
+    forbidden_personal_artifacts = (
+        "/users/jmcentire/",
+        "/home/jmcentire/",
+        "cookie: session=",
+        "authorization: bearer ",
+        "-----begin private key-----",
+    )
+    for path in DOCS.iterdir():
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        lowered = text.lower()
+        for marker in forbidden_personal_artifacts:
+            assert marker not in lowered, f"{path.name} contains raw personal or secret material"
+        assert not surviving_high_confidence(text), (
+            f"{path.name} contains text matching a high-confidence live-secret pattern"
+        )

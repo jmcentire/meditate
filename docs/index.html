@@ -47,6 +47,9 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="status-dot"></span> Local control plane · Anthropic-backed plans · Alpha</p>
           <h1>Rewrite the rule.<br><em>Not another exception.</em></h1>
+          <p class="hero-lede"><strong>Authority before confidence.</strong> A fluent rewrite has no
+            authority of its own; current instructions, explicit corrections, scope, and handoff
+            boundaries come first.</p>
           <p class="hero-lede">
             Meditate consolidates the behavioral directives Claude Code and Codex load.
             Local code weighs newer corrections against older context; a pinned Anthropic
@@ -59,6 +62,7 @@
           <div class="hero-facts" aria-label="Project facts">
             <span>MIT licensed</span>
             <span>Dry-run by default</span>
+            <span>Attended apply only</span>
             <span>No product telemetry</span>
           </div>
         </div>
@@ -108,7 +112,7 @@
           </article>
 
           <article class="comparison-card after-card">
-            <p class="card-label">Meditated state</p>
+            <p class="card-label">Illustrative proposal — not a verdict</p>
             <div class="resolved-rule">
               <span class="resolved-icon" aria-hidden="true">✓</span>
               <p>
@@ -119,10 +123,18 @@
             <ul class="lineage-list">
               <li>All four predecessors retained in lineage</li>
               <li>Newer corrections weighed, not blindly preferred</li>
-              <li>One coherent directive written</li>
+              <li>One consolidated directive proposed</li>
             </ul>
-            <p class="card-result good">One rule. Recoverable provenance.</p>
+            <p class="card-result good">One proposal with recoverable provenance.</p>
           </article>
+        </div>
+        <div class="boundary-note">
+          <p class="boundary-title">Illustration, not behavioral-equivalence proof</p>
+          <p>
+            This four-rules-to-one example shows the shape of a proposal. It does not decide that
+            the replacement is semantically good or prove that it preserves predecessor behavior.
+            Human review remains required.
+          </p>
         </div>
       </div>
     </section>
@@ -136,24 +148,76 @@
         <div class="feature-grid">
           <article class="feature-card">
             <span class="feature-number">01</span>
-            <h3>Temporal, not disposable</h3>
-            <p>Recency is a decay weight, never an age cutoff. Older evidence stays available as support, conflict, or context.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-number">02</span>
             <h3>Authority before confidence</h3>
             <p>An explicit user reversal outranks a newer assistant summary. Scope, source, and supersession remain separate signals.</p>
           </article>
           <article class="feature-card">
+            <span class="feature-number">02</span>
+            <h3>Temporal, not disposable</h3>
+            <p>Recency is a decay weight, never an age cutoff. Older evidence stays available as support, conflict, or context.</p>
+          </article>
+          <article class="feature-card">
             <span class="feature-number">03</span>
             <h3>Total disposition</h3>
-            <p>The model must keep, replace, remove, or relocate every existing directive exactly once. It cannot silently drop inconvenient rules.</p>
+            <p>The model must keep, replace, remove, relocate, or escalate every directive exactly once. Escalation is report-only.</p>
           </article>
           <article class="feature-card">
             <span class="feature-number">04</span>
             <h3>Evidence, not vibes</h3>
             <p>User interaction logs and optional Kindex entries affect vitality only through locally minted IDs, bounded quotes, and deterministic counts.</p>
           </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-heading narrow">
+          <p class="eyebrow">Scope and loaded state are part of the contract</p>
+          <h2>Specific context stays specific.</h2>
+          <p>
+            Contextual guidance relocates only into an exact configured Claude rule with a
+            non-empty <code>paths:</code> list. Meditate never invents a glob or averages separate
+            contexts into vague prose.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>Five dispositions</h3>
+            <p>Keep, replace, remove, relocate, or escalate. Escalate preserves source bytes,
+              requires independent evidence, and only reports a hook/settings candidate.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Import integrity</h3>
+            <p>Claude <code>@path</code> graphs are validated to four hops and bound before/after.
+              Imported documents are sanitized read-only context, never implicit targets.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Product metrics</h3>
+            <p>Reports persist pre/post directive, UTF-8 byte, and line totals and deltas;
+              escalations remain separate from changed directives and churn.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Honest budgets</h3>
+            <p>Claude's 200-line status is guidance, not a hard limit. Configured Codex targets
+              are checked against <code>project_doc_max_bytes</code> with configured-only coverage.</p>
+          </article>
+        </div>
+        <div class="boundary-note">
+          <p class="boundary-title">Import trust boundary</p>
+          <p>
+            Meditate faithfully follows configured Claude roots' documented relative, absolute,
+            and <code>~/</code> <code>@path</code> imports. Operators must trust those roots and
+            graphs: an import may read any process-readable file it names. Import-only documents
+            are submitted as immutable context and cannot be written through their import role.
+            Recognized secret shapes in imported content are redacted locally before provider
+            submission, but pattern redaction is not comprehensive and is not a filesystem
+            sandbox. Same-user filesystem compromise is outside Meditate's threat boundary.
+          </p>
+        </div>
+        <div class="reference-links">
+          <a href="https://code.claude.com/docs/en/memory">Claude memory semantics <span aria-hidden="true">↗</span></a>
+          <a href="https://learn.chatgpt.com/docs/agent-configuration/agents-md">Codex AGENTS.md semantics <span aria-hidden="true">↗</span></a>
         </div>
       </div>
     </section>
@@ -187,22 +251,24 @@
           <article class="flow-step">
             <span>4</span>
             <h3>Verify</h3>
-            <p>Reject unknown IDs, invented quotes, unresolved conflicts, excessive churn, drift, or secrets.</p>
+            <p>Reject unknown IDs, invented quotes, unscoped moves, import drift, excessive churn, or secrets.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>5</span>
             <h3>Archive + apply</h3>
-            <p>Bind approval to the plan hash, archive pre/post images, write atomically, and keep restoration exact.</p>
+            <p>Bind attended approval to the exact plan hash, archive pre/post images, write atomically, and keep restoration exact.</p>
           </article>
         </div>
 
         <div class="boundary-note">
-          <p class="boundary-title">What Meditate does not claim to clean</p>
+          <p class="boundary-title">Structural validation is not behavioral qualification</p>
           <p>
-            Model weights, hidden provider state, retrieval databases, dirty worktrees, tool-side effects,
-            and arbitrary agent-platform memory are outside its boundary. Meditate targets instruction files
-            and learned behavioral directives—the local state its operator can inspect and recover.
+            Every plan retains the requested model and binds the API-returned resolved model ID,
+            prompt version/hash, import graphs, and
+            <code>semantic_verification: not_run</code>. Until an owner-authored behavioral suite
+            exists, every mutation is attended-only, unattended apply fails closed, and human
+            report/diff review remains required.
           </p>
         </div>
       </div>
@@ -231,12 +297,42 @@
           </article>
           <article>
             <span class="safety-mark" aria-hidden="true">C</span>
-            <div><h3>Exact approval</h3><p>Attended apply requires the proposal’s exact SHA-256. A report or run identifier is not ambient authority.</p></div>
+            <div><h3>Exact provenance and approval</h3><p>The plan hash binds the requested
+              model and API-returned resolved model ID, prompt version/hash, semantic status,
+              imports, operations, and metrics. Attended apply requires that exact SHA-256.</p></div>
           </article>
           <article>
             <span class="safety-mark" aria-hidden="true">D</span>
             <div><h3>Restore without erasure</h3><p>Later hand edits block restore unless forced; forced restore archives those diverged bytes before replacement.</p></div>
           </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-heading narrow">
+          <p class="eyebrow">Adjacent tools · snapshot 2026-08-18</p>
+          <h2>Why not a linter?</h2>
+          <p>
+            This is a capable category. <a href="https://claudelint.com/">claudelint</a>
+            advertises 116 rules across 10 categories and plugin restructuring;
+            <a href="https://www.npmjs.com/package/@felixgeelhaar/cclint">cclint</a>
+            covers imports, hierarchy conflicts, duplicates, and fixes;
+            <a href="https://github.com/0xmariowu/AgentLint">AgentLint</a> and
+            <a href="https://agentlinter.com/">agentlinter.com</a> describe static, AI,
+            and session checks/fixes; <a href="https://reporails.com/">Reporails</a>
+            offers local deterministic diagnostics and healing.
+          </p>
+          <p>
+            Meditate's narrower distinction is exact disposition coverage for every configured
+            pre-image directive, temporal interaction evidence, and recoverable exact-hash
+            apply—not a claim that these tools do nothing. That total source-record coverage is
+            not total coverage of a directive's behavioral surface.
+            The exact purported title <cite>A Taxonomy of Agent Instruction Failures</cite> by
+            Gloaguen et al. was not verified and is not load-bearing. The verified paper is
+            <a href="https://arxiv.org/abs/2605.07769"><cite>Coding Agents Don't Know When to Act</cite></a>.
+          </p>
         </div>
       </div>
     </section>
@@ -281,7 +377,7 @@ python3 -m venv .venv
               <tr><td><code>meditate plan</code></td><td>Create and validate a bounded proposal and report.</td><td>Archives only</td></tr>
               <tr><td><code>meditate apply</code></td><td>Apply one archived plan with exact hash approval.</td><td>Allowlisted targets</td></tr>
               <tr><td><code>meditate restore</code></td><td>Restore archived pre-images after drift checks.</td><td>Archived targets</td></tr>
-              <tr><td><code>meditate run</code></td><td>Inspect and plan for cron; mutation requires layered gates.</td><td>None by default</td></tr>
+              <tr><td><code>meditate run</code></td><td>Inspect and plan for cron; unattended mutation is semantically gated off.</td><td>None</td></tr>
               <tr><td><code>meditate cron</code></td><td>Print or validate a locked cron entry. Never installs it.</td><td>None</td></tr>
               <tr><td><code>meditate purge</code></td><td>Preview or explicitly erase a named run archive.</td><td>Explicit only</td></tr>
             </tbody>

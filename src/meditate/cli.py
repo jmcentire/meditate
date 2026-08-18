@@ -68,9 +68,24 @@ def _plan_payload(config: Config, *, include_inspection_report: bool) -> dict[st
         "run_id": plan.run_id,
         "plan_sha256": plan.plan_sha256,
         "model": f"{plan.provider}:{plan.model}",
+        "model_id": plan.model_id,
+        "prompt_version": plan.prompt_version,
+        "prompt_sha256": plan.prompt_sha256,
+        "semantic_verification": plan.semantic_verification,
         "changed_directives": plan.changed_directive_count,
+        "escalated_directives": plan.escalated_directive_count,
         "changed_targets": changed_targets,
         "directives": plan.directive_count,
+        "pre_directives": plan.directive_count,
+        "post_directives": plan.post_directive_count,
+        "directive_delta": plan.metrics.get("directive_delta", 0),
+        "pre_bytes": plan.metrics.get("pre_bytes", 0),
+        "post_bytes": plan.metrics.get("post_bytes", 0),
+        "byte_delta": plan.metrics.get("byte_delta", 0),
+        "pre_lines": plan.metrics.get("pre_lines", 0),
+        "post_lines": plan.metrics.get("post_lines", 0),
+        "line_delta": plan.metrics.get("line_delta", 0),
+        "metrics": plan.metrics,
         "minimum_apply_mode": plan.minimum_apply_mode,
         "blocked_reasons": list(plan.blocked_reasons),
         "plan_report_json": str(plan_json),
@@ -144,7 +159,23 @@ def _run_command(args: argparse.Namespace) -> int:
                 "event": "run_complete",
                 "run_id": payload["run_id"],
                 "plan_sha256": payload["plan_sha256"],
+                "model_id": payload["model_id"],
+                "prompt_version": payload["prompt_version"],
+                "prompt_sha256": payload["prompt_sha256"],
+                "semantic_verification": payload["semantic_verification"],
                 "changed_targets": payload["changed_targets"],
+                "changed_directives": payload["changed_directives"],
+                "escalated_directives": payload["escalated_directives"],
+                "pre_directives": payload["pre_directives"],
+                "post_directives": payload["post_directives"],
+                "directive_delta": payload["directive_delta"],
+                "pre_bytes": payload["pre_bytes"],
+                "post_bytes": payload["post_bytes"],
+                "byte_delta": payload["byte_delta"],
+                "pre_lines": payload["pre_lines"],
+                "post_lines": payload["post_lines"],
+                "line_delta": payload["line_delta"],
+                "metrics": payload["metrics"],
                 "apply_state": payload["apply"]["state"],
             },
         )
@@ -233,13 +264,17 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--apply",
         action="store_true",
-        help="Request unattended apply; config, evidence, and probation gates still apply",
+        help="Request unattended apply (rejected until semantic qualification exists)",
     )
 
     apply = commands.add_parser("apply", parents=[common], help="Apply an archived exact plan")
     apply.add_argument("run_id")
     apply.add_argument("--approve", help="Exact plan SHA-256 for attended apply")
-    apply.add_argument("--unattended", action="store_true", help="Use configured unattended policy")
+    apply.add_argument(
+        "--unattended",
+        action="store_true",
+        help="Request unattended mode (currently rejected: semantic qualification required)",
+    )
 
     restore = commands.add_parser("restore", parents=[common], help="Restore archived pre-images")
     restore.add_argument("run_id")
@@ -272,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     cron.add_argument(
         "--apply",
         action="store_true",
-        help="Print an unattended mutation entry; all runtime gates remain enforced",
+        help="Print an unattended entry; runtime rejects it until qualification exists",
     )
     return parser
 

@@ -1,22 +1,31 @@
 # Meditate
 
-> Operator-controlled, recoverable consolidation of behavioral directives loaded by Claude Code and OpenAI Codex.
+> Authority before confidence: operator instructions, explicit corrections, scope, and handoff boundaries outrank model fluency.
 
-Meditate addresses monotonic instruction append: agents add exception clauses after corrections but rarely replace the obsolete rule. It preserves temporal and source provenance, asks a pinned model for an exact total-disposition plan, validates that plan locally, and archives target bytes before an approved write.
+Meditate is an operator-controlled, recoverable consolidator for behavioral directives loaded by Claude Code and OpenAI Codex. It addresses monotonic append: an agent records another exception but leaves the obsolete rule live.
 
 ## Canonical documentation
 
-- [Documentation](https://jmcentire.github.io/meditate/): Overview, workflow, safety model, installation, and command reference
+- [Documentation](https://jmcentire.github.io/meditate/): Overview, workflow, safety, installation, and commands
 - [Privacy](https://jmcentire.github.io/meditate/privacy.html): Local processing, provider calls, archives, and telemetry boundaries
 - [Source README](https://github.com/jmcentire/meditate/blob/main/README.md): Detailed operator guide
-- [Design brief](https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md): Authority, evidence, transaction, and acceptance contracts
-- [Full agent reference](https://jmcentire.github.io/meditate/llms-full.txt): Expanded machine-readable product reference
+- [Design brief](https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md): Authority, evidence, semantic, import, and transaction contracts
+- [Full agent reference](https://jmcentire.github.io/meditate/llms-full.txt): Expanded machine-readable reference
 
 ## Important boundaries
 
-- `inspect` is local-only and makes no model call.
-- `plan` never mutates instruction targets, but it sends current directive text and selected, locally secret-scanned/redacted evidence to the pinned Anthropic model.
-- Model output is untrusted and cannot mint paths or durable IDs.
-- `apply` requires exact plan-hash approval and archive-before-write.
-- Raw histories, auto-memory, and Kindex are read-only evidence.
-- Meditate is alpha software and is not a universal agent-state scrubber.
+- `inspect` is local-only. `plan` sends current directives, sanitized read-only Claude imports, and selected locally secret-scanned/redacted evidence to the exact Anthropic model.
+- The five total dispositions are keep, replace, remove, relocate, and report-only escalate. Escalate preserves source prose and never writes hooks or settings.
+- Contextual relocation requires an exact configured `.claude/rules/` target with a non-empty frontmatter `paths:` list. Meditate never invents a glob.
+- Configured `CLAUDE.md`/`CLAUDE.local.md` roots bind a validated four-hop `@path` import graph before and after the proposal. See https://code.claude.com/docs/en/memory.
+- Import threat boundary: Meditate faithfully follows those roots' documented relative, absolute, and `~/` imports, each of which may read any process-readable file it names. Operators must trust the roots and graphs. Import-only documents are submitted as immutable context and cannot be written through their import role. Recognized secret shapes in imported content are redacted locally before provider submission, but pattern redaction is not comprehensive or a filesystem sandbox; same-user filesystem compromise is outside Meditate's threat boundary.
+- Plan and manifest retain the requested `model`, bind the API-returned resolved `model_id` (falling back to the request only when absent), prompt version/hash, import graphs, metrics, and `semantic_verification={"status":"not_run","method":"owner_defined_behavioral_suite"}` into the exact plan hash.
+- Structural validation is not behavioral qualification. Until an owner-authored suite exists, every mutation is attended-only; unattended apply fails with `semantic_verification_required`, and human review remains required.
+- Reports expose pre/post directive, byte, and line totals/deltas. Claude's 200-line status is guidance, while configured Codex `AGENTS*.md` targets are checked against `project_doc_max_bytes` with `configured_targets_only` coverage. See https://learn.chatgpt.com/docs/agent-configuration/agents-md.
+- Raw histories, auto-memory, and Kindex are read-only evidence. Writable paths must be exact configured targets; archive-before-write, drift checks, rollback, and restore remain mandatory.
+
+## Why not a linter? (snapshot 2026-08-18)
+
+claudelint (https://claudelint.com/), cclint (https://www.npmjs.com/package/@felixgeelhaar/cclint), AgentLint (https://github.com/0xmariowu/AgentLint and https://agentlinter.com/), and Reporails (https://reporails.com/) already advertise substantive rules, import/hierarchy checks, static/AI/session analysis, restructuring, fixes, diagnostics, or healing. Meditate's narrower distinction is exact disposition coverage for every configured pre-image directive, temporal evidence, and recoverable exact-hash apply—not that adjacent tools do nothing.
+
+The purported exact title `A Taxonomy of Agent Instruction Failures` by Gloaguen et al. was not verified and is not load-bearing. The verified paper is `Coding Agents Don't Know When to Act`: https://arxiv.org/abs/2605.07769.

@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from itertools import combinations
 
 from .config import Config
-from .models import EvidenceEvent, InspectionResult, SourceStats, TargetDocument
+from .models import EvidenceEvent, ImportGraph, InspectionResult, SourceStats, TargetDocument
 
 _CORRECTION = re.compile(
     r"(?i)\b(?:new rule|i (?:said|asked)|you (?:did not|didn't)|stop (?:doing|saying|thrashing)|"
@@ -307,6 +307,7 @@ def detect_overlaps(
 
 def build_inspection(
     targets: tuple[TargetDocument, ...],
+    import_graph: ImportGraph,
     events: tuple[EvidenceEvent, ...],
     stats: SourceStats,
     warnings: tuple[str, ...],
@@ -323,6 +324,7 @@ def build_inspection(
         events=enriched,
         selected_events=selected,
         stats=stats,
+        import_graph=import_graph,
         overlaps=detect_overlaps(targets, selected),
         warnings=warnings,
         degraded=tuple(degraded),
