@@ -12,8 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import plan as plan_module
 from .config import Config
-from .plan import PARSER_VERSION
+from .imports import build_import_graph
+from .plan import PARSER_VERSION, SEMANTIC_VERIFICATION
 from .report import append_log
 from .util import (
     SCHEMA_VERSION,
@@ -26,6 +28,7 @@ from .util import (
     load_json,
     resolve_allowlisted,
     sha256_bytes,
+    sha256_text,
     validate_run_id,
 )
 
@@ -77,6 +80,41 @@ def _verified_artifacts(
         fail("archive_corrupt", f"Run artifacts disagree on plan hash for {run_id}")
     if plan.get("targets") != manifest.get("targets"):
         fail("archive_corrupt", f"Plan and manifest targets differ for {run_id}")
+    for field in (
+        "model_id",
+        "prompt_version",
+        "prompt_sha256",
+        "semantic_verification",
+        "metrics",
+        "import_graph_before",
+        "import_graph_after",
+    ):
+        if (field in plan or field in manifest) and (
+            field not in plan or field not in manifest or plan[field] != manifest[field]
+        ):
+            fail(
+                "archive_corrupt",
+                f"Plan and manifest disagree on {field} for {run_id}",
+            )
+    if "model_id" in plan and (not isinstance(plan["model_id"], str) or not plan["model_id"]):
+        fail("archive_corrupt", f"Run {run_id} has invalid model provenance")
+    if "prompt_version" in plan and not isinstance(plan["prompt_version"], str):
+        fail("archive_corrupt", f"Run {run_id} has invalid prompt version")
+    if "prompt_sha256" in plan and (
+        not isinstance(plan["prompt_sha256"], str) or len(plan["prompt_sha256"]) != 64
+    ):
+        fail("archive_corrupt", f"Run {run_id} has invalid prompt hash")
+    if "semantic_verification" in plan and plan["semantic_verification"] != SEMANTIC_VERIFICATION:
+        fail("archive_corrupt", f"Run {run_id} has invalid semantic verification state")
+    for field in ("import_graph_before", "import_graph_after"):
+        snapshot = plan.get(field)
+        if snapshot is None:
+            continue
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("digest"), str):
+            fail("archive_corrupt", f"Run {run_id} has invalid {field}")
+        graph_core = {key: value for key, value in snapshot.items() if key != "digest"}
+        if sha256_bytes(canonical_json_bytes(graph_core)) != snapshot["digest"]:
+            fail("archive_corrupt", f"Run {run_id} has invalid {field} digest")
     evidence_sha = plan.get("evidence_sha256")
     if not isinstance(evidence_sha, str) or manifest.get("packet_sha256") != evidence_sha:
         fail("archive_corrupt", f"Run artifacts disagree on evidence hash for {run_id}")
@@ -269,6 +307,11 @@ def apply_run(
         run_dir, plan, manifest, state = _verified_artifacts(config, run_id)
         if state.get("state") != "planned" or state.get("consumed"):
             fail("plan_consumed", f"Run {run_id} is not an unused planned run")
+        if mode == "unattended":
+            fail(
+                "semantic_verification_required",
+                "Unattended apply requires an owner-defined behavioral qualification suite",
+            )
         if (
             plan.get("parser_version") != PARSER_VERSION
             or manifest.get("parser_version") != PARSER_VERSION
@@ -277,32 +320,34 @@ def apply_run(
                 "parser_version_drift",
                 "Parser version differs from the version that created the plan",
             )
+        if plan.get("prompt_version") != plan_module.PLAN_PROMPT_VERSION:
+            fail(
+                "prompt_version_drift",
+                "Plan prompt version differs from the local planner; generate a new plan",
+            )
+        if plan.get("prompt_sha256") != sha256_text(plan_module.SYSTEM_PROMPT):
+            fail(
+                "prompt_sha256_drift",
+                "Plan prompt hash differs from the local planner; generate a new plan",
+            )
         if plan.get("config_sha256") != config.hash or manifest.get("config_sha256") != config.hash:
             fail("config_drift", "Configuration changed after plan generation; generate a new plan")
         blocked = plan.get("blocked_reasons", [])
         if blocked:
             fail("plan_blocked", f"Plan is blocked: {', '.join(str(item) for item in blocked)}")
         plan_sha = str(plan["plan_sha256"])
-        if mode == "attended":
-            if approval_sha256 != plan_sha:
-                fail("approval_required", f"Attended apply requires --approve {plan_sha}")
-        else:
-            if approval_sha256:
-                fail(
-                    "ambient_approval_forbidden",
-                    "Unattended apply cannot reuse an attended approval hash",
-                )
-            if not config.apply.allow_unattended_apply:
-                fail("unattended_disabled", "Config does not permit unattended apply")
-            if plan.get("minimum_apply_mode") != "unattended":
-                fail("attended_only_plan", "At least one operation requires attended approval")
-            attended = int(_ledger(config).get("attended_applies", 0))
-            if attended < config.apply.minimum_attended_applies:
-                fail(
-                    "unattended_probation",
-                    f"Need {config.apply.minimum_attended_applies} successful attended applies; "
-                    f"found {attended}",
-                )
+        if mode == "attended" and approval_sha256 != plan_sha:
+            fail("approval_required", f"Attended apply requires --approve {plan_sha}")
+
+        expected_before_graph = plan.get("import_graph_before")
+        if not isinstance(expected_before_graph, dict):
+            fail("import_graph_drift", "Plan does not bind a Claude import graph")
+        observed_before_graph = build_import_graph(config).public_dict()
+        if observed_before_graph != expected_before_graph:
+            fail(
+                "import_graph_drift",
+                "Claude import graph changed after planning; generate a new plan",
+            )
 
         targets_raw = manifest.get("targets")
         targets = (
@@ -354,6 +399,15 @@ def apply_run(
                     int(target["mode"]),
                     expected_exists=bool(target["existed"]),
                     expected_sha256=str(target["pre_sha256"]),
+                )
+            expected_after_graph = plan.get("import_graph_after")
+            if not isinstance(expected_after_graph, dict):
+                fail("import_graph_drift", "Plan does not bind a post-apply import graph")
+            observed_after_graph = build_import_graph(config).public_dict()
+            if observed_after_graph != expected_after_graph:
+                fail(
+                    "import_graph_drift",
+                    "Claude import graph did not match the validated post-plan graph",
                 )
         except Exception as apply_error:
             state = _transition(
@@ -422,6 +476,11 @@ def apply_run(
             "mode": mode,
             "approval": "plan_sha256" if mode == "attended" else "unattended_policy",
             "minimum_apply_mode": plan.get("minimum_apply_mode"),
+            "model_id": plan.get("model_id"),
+            "prompt_version": plan.get("prompt_version"),
+            "prompt_sha256": plan.get("prompt_sha256"),
+            "semantic_verification": plan.get("semantic_verification"),
+            "metrics": plan.get("metrics"),
             "targets": [
                 {"path": target["logical_path"], "post_sha256": target["post_sha256"]}
                 for target in targets

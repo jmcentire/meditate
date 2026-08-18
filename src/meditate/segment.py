@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import stat
 import unicodedata
+from pathlib import Path
 
 from .config import Config
 from .models import Directive, TargetDocument
@@ -15,6 +16,73 @@ _TOP_LIST = re.compile(r"^(?:[-+*]|\d+[.)])[ \t]+")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _PROTECT_START = "<!-- meditate:protect:start"
 _PROTECT_END = "<!-- meditate:protect:end -->"
+
+
+def parse_paths_frontmatter(content: str) -> tuple[str, ...]:
+    """Parse the simple root-level ``paths:`` list supported by Claude rules."""
+
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ()
+    end = next(
+        (index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---"),
+        -1,
+    )
+    if end < 0:
+        return ()
+    frontmatter = lines[1:end]
+    paths: list[str] = []
+    paths_indent: int | None = None
+
+    def clean(value: str) -> str:
+        chosen = value.strip()
+        if len(chosen) >= 2 and chosen[0] == chosen[-1] and chosen[0] in {"'", '"'}:
+            chosen = chosen[1:-1]
+        elif " #" in chosen:
+            chosen = chosen.split(" #", 1)[0].rstrip()
+        return chosen if "\x00" not in chosen else ""
+
+    for line in frontmatter:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if paths_indent is None:
+            if stripped.startswith("paths:"):
+                paths_indent = indent
+                inline = stripped.removeprefix("paths:").strip()
+                if inline.startswith("[") and inline.endswith("]"):
+                    paths.extend(
+                        value for item in inline[1:-1].split(",") if (value := clean(item))
+                    )
+            continue
+        if indent <= paths_indent:
+            break
+        item = stripped
+        if not item.startswith("-"):
+            continue
+        value = clean(item[1:])
+        if value:
+            paths.append(value)
+    return tuple(dict.fromkeys(paths))
+
+
+def is_claude_rules_target(path: Path, config: Config) -> bool:
+    candidate = path.expanduser().absolute()
+    if candidate.suffix.casefold() != ".md" or candidate not in config.allowed_targets:
+        return False
+
+    rules_root = (config.sources.claude_home / "rules").expanduser().absolute()
+    try:
+        relative = candidate.relative_to(rules_root)
+    except ValueError:
+        pass
+    else:
+        if relative.parts:
+            return True
+
+    parts = candidate.parts
+    return any(parts[index : index + 2] == (".claude", "rules") for index in range(len(parts) - 2))
 
 
 def normalize_directive(text: str) -> str:
@@ -47,6 +115,17 @@ def segment_markdown(
     protected_names = {item.casefold() for item in protected_headings}
     blocks: list[Directive] = []
     index = 0
+    if lines and lines[0].strip() == "---":
+        frontmatter_end = next(
+            (
+                line_index
+                for line_index, line in enumerate(lines[1:], start=1)
+                if line.strip() == "---"
+            ),
+            -1,
+        )
+        if frontmatter_end >= 0:
+            index = frontmatter_end + 1
 
     def add_block(start_line: int, end_line: int, kind: str, force_protected: bool = False) -> None:
         start = offsets[start_line]
@@ -186,6 +265,9 @@ def load_targets(config: Config) -> tuple[TargetDocument, ...]:
                 mode=mode,
                 existed=existed,
                 directives=directives,
+                scope_paths=(
+                    parse_paths_frontmatter(content) if is_claude_rules_target(path, config) else ()
+                ),
             )
         )
     return tuple(documents)

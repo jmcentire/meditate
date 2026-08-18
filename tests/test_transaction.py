@@ -251,7 +251,7 @@ def test_noop_plan_cannot_be_counted_as_an_apply(config_factory: ConfigFactory) 
     assert caught.value.code == "no_changes"
 
 
-def test_unattended_apply_needs_reviewed_evidence_and_local_policy(
+def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_policy(
     config_factory: ConfigFactory,
 ) -> None:
     original = "# Git\n\n- Commit only when asked.\n"
@@ -271,8 +271,24 @@ def test_unattended_apply_needs_reviewed_evidence_and_local_policy(
         )
     )
     plan = create_plan(config, provider=provider, inspection=inspection(config, (reviewed,)))
-    receipt = apply_run(config, plan.run_id, mode="unattended")
-    assert receipt["approval"] == "unattended_policy"
+    with pytest.raises(MeditateError) as caught:
+        apply_run(config, plan.run_id, mode="unattended")
+    assert caught.value.code == "semantic_verification_required"
+    assert target.read_text(encoding="utf-8") == original
+
+    state = json.loads(
+        (config.data_root / "runs" / plan.run_id / "state.json").read_text(encoding="utf-8")
+    )
+    assert state["state"] == "planned"
+    assert state["consumed"] is False
+
+    receipt = apply_run(
+        config,
+        plan.run_id,
+        mode="attended",
+        approval_sha256=plan.plan_sha256,
+    )
+    assert receipt["approval"] == "plan_sha256"
     assert "Commit completed work" in target.read_text(encoding="utf-8")
 
 

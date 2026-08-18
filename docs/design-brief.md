@@ -7,6 +7,11 @@ directives used by Claude Code and OpenAI Codex. Its job is conflict resolution,
 not summary-by-deletion: it must replace obsolete or contradictory rules with a
 smaller coherent set while retaining recoverable provenance.
 
+**Authority before confidence is the first invariant.** Model fluency, evidence
+volume, and deterministic structural checks do not grant permission or prove
+behavioral equivalence. Current instructions, explicit corrections, applicable
+scope, and human or named-actor boundaries remain authoritative.
+
 The first real subject is Jeremy McEntire's local Claude Code state. No raw
 interaction corpus or secret-bearing excerpt may be committed to this repo.
 
@@ -127,6 +132,29 @@ auto-memory, and Kindex are evidence sources and are never silently rewritten.
 Symlinked targets are refused by default so an atomic rename cannot destroy the
 link; a later explicit follow-through mode must archive both link and referent.
 
+Configured Claude roots named `CLAUDE.md` or `CLAUDE.local.md` load official
+`@path` imports recursively, consistent with Claude's documented
+[memory semantics](https://code.claude.com/docs/en/memory). Imports outside inline
+and fenced code resolve relative to the containing file; absolute and `~/` paths
+are supported. The graph is limited to four hops and rejects dangling, circular,
+over-depth, non-regular, or non-UTF-8 nodes before a model call. Imported content
+is locally secret-scanned and enters the packet with `mutable=false`; it is not a
+disposition target unless independently configured as writable.
+
+This faithful import behavior is also a trust boundary. Operators must trust the
+configured Claude roots and resulting import graphs: a relative, absolute, or
+`~/` import may read any process-readable file it names. Import-only documents are
+submitted as `mutable=false` and cannot be written through their import role.
+Recognized secret shapes in imported content are redacted locally before provider
+submission, but pattern redaction is not comprehensive and is not a filesystem
+sandbox. Same-user filesystem compromise is outside Meditate's threat boundary.
+
+Configured `.claude/rules/**/*.md` targets expose their simple frontmatter
+`paths:` lists to the planner. Contextual conflicts relocate to an exact scoped
+target before abstraction; an unscoped contextual relocation fails closed, and
+Meditate never invents a glob. Codex target interpretation follows the official
+[AGENTS.md loading semantics](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
 ## Command contract
 
 - `meditate init`: write a commented TOML configuration.
@@ -138,8 +166,8 @@ link; a later explicit follow-through mode must archive both link and referent.
   validate structured output, and write a proposal/report. It changes no target.
 - `meditate apply RUN_ID`: revalidate source hashes, archive every target plus a
   manifest, atomically replace targets, and emit an apply receipt.
-- `meditate run`: inspect + plan; apply only with both configuration permission
-  and an explicit `--apply` flag. Cron uses this surface.
+- `meditate run`: inspect + plan. Cron uses this surface. An explicit `--apply`
+  currently fails with `semantic_verification_required` rather than mutating.
 - `meditate restore RUN_ID`: restore archived targets transactionally, refusing
   to overwrite post-run changes unless `--force` is given.
 - `meditate cron`: print a locked cron entry or check its dependencies. Meditate
@@ -183,6 +211,15 @@ skipped; a partial or degraded corpus run is visible and blocks apply. The parse
 version is bound into every archived plan so a validator change invalidates old
 plans rather than silently reinterpreting them.
 
+Each target and aggregate summary records pre/post directive, UTF-8 byte, and
+line counts with deltas, while changed and escalated directives remain separate
+product measures. A Claude `CLAUDE.md` post-state over 200 lines is reported as
+guidance status, not a vendor hard limit. The configured writable Codex
+`AGENTS*.md` set must fit `project_doc_max_bytes` read from
+`sources.codex_home/config.toml`, defaulting to 32,768 bytes. The result is
+explicitly `configured_targets_only`; passing does not prove that every
+cwd-specific Codex chain fits its runtime budget.
+
 ## Structured synthesis contract
 
 Instruction documents are deterministically segmented using ATX
@@ -191,7 +228,7 @@ paragraphs, and opaque fenced code blocks. Pre-image directive IDs are minted
 locally from the schema version, target identity, heading path, and normalized
 content; the model may reference only existing IDs and cannot mint durable IDs.
 Output must provide a disposition for every pre-image directive exactly once:
-kept, replaced, removed, or relocated.
+kept, replaced, removed, relocated, or escalated.
 
 The model returns JSON operations, not regenerated files. Unchanged spans are
 copied byte-for-byte from the pre-image; edited/consolidated operations carry
@@ -203,11 +240,26 @@ properties rather than hopes about model formatting.
 The model returns JSON with:
 
 - kept directive IDs;
-- replacement/removal/relocation operations with predecessor IDs, exact
+- replacement/removal/relocation/escalation operations with predecessor IDs, exact
   allowlisted destination, heading, replacement text, reason, and evidence;
 - exact evidence IDs and matching sanitized quotes for every change;
 - unresolved conflicts that block apply;
 - a concise human report.
+
+`escalate` is report-only. It applies to one current directive, keeps its source
+prose byte-for-byte at the same target and heading, names `hook` or `settings` as
+an enforcement target, and supplies a non-empty deterministic check. It requires
+at least two evidence records from two independent session/provenance groups.
+Local code computes lineage depth as the number of independent cited groups;
+model-supplied counts are neither requested nor trusted. Escalations are
+`candidate_only`, attended, and counted separately from churn and changed
+directives. Meditate never writes the hook or settings surface.
+
+Every change records empty enforcement fields unless it is an escalation.
+Relocations record either `contextual` or `organization`; contextual is valid
+only when the destination is an exact configured `.claude/rules/` target with a
+non-empty parsed `paths:` list. This is scope-before-merge: separate contexts are
+not averaged into less precise prose.
 
 Validation rejects unknown evidence IDs, evidence citations without a quoted
 span matching the sanitized record, missing or duplicate directive dispositions,
@@ -221,6 +273,29 @@ near-zero proposal rather than rephrasing everything.
 Configured protected headings or marker-delimited blocks are copied through
 byte-identically and are excluded from model mutation. They remain present in
 the evidence packet so the proposed surrounding rules cannot contradict them.
+
+## Structural and semantic gates
+
+Structural validation proves schema coverage, exact quote grounding, allowlisted
+destinations, deterministic rendering, bounded churn/size, secret screening,
+archive integrity, and source/config/import-graph freshness. It is not behavioral
+qualification: those checks do not prove that a consolidation preserves the
+observable behavior of all predecessor directives.
+
+Every new plan and manifest retain `schema_version` and the requested `model`,
+and carry an identical API-returned resolved `model_id` (falling back to the
+requested identifier only when the response omits it), `prompt_version`, `prompt_sha256`, and
+`semantic_verification = {"status":"not_run","method":"owner_defined_behavioral_suite"}`.
+The exact system-prompt UTF-8 hash and all provenance fields are part of
+`plan_sha256`; archive loading cross-checks the plan and manifest, and apply
+rejects local prompt drift.
+
+There is deliberately no in-product transition to `passed`. Until the owner
+authors an independent behavioral suite, every mutating operation and every
+changed plan has a locally computed minimum mode of `attended`. Exact evidence
+allowlisting cannot upgrade it. `apply_run(..., mode="unattended")` fails before
+target writes with `semantic_verification_required`; attended apply with the
+exact plan SHA remains valid. Reports say this plainly and require human review.
 
 ## Archive and transaction contract
 
@@ -240,6 +315,14 @@ state roots are refused, and running as root against another user's home is
 refused. Multi-file apply has an acknowledged non-atomic window, rolls back
 already changed targets if a later write fails, and emits a machine-readable
 recovery receipt if rollback itself fails.
+
+Plans and manifests also bind the validated Claude import graph before and after
+the proposal, including every graph node's file hash and a canonical graph
+digest. Apply recomputes the before graph before target writes and the after graph
+after writes. A pre-write mismatch fails closed; a post-write mismatch enters the
+existing rollback path. Reports and the append-only JSONL summary expose the same
+model/prompt provenance, semantic status, aggregate metrics, and per-target
+pre/post product counts without copying raw imported content into inspection JSON.
 
 Apply state is persisted atomically through `planned`, `applying`, `applied`,
 `rolling_back`, `rolled_back`, and `recovery_required`; restore treats non-clean
@@ -266,12 +349,11 @@ resolved at runtime. `meditate cron` emits an entry and `cron --check` validates
 the resolved executable, config, profile, current key source, Kindex command, and
 target paths; Meditate does not install the entry itself.
 The generated entry defaults to `run` without apply. Unattended mutation remains
-available because it is a product requirement, but requires
-`allow_unattended_apply = true` in config plus `--apply`, the configured attended
-probation count, and an exact cited evidence ID that an operator has placed in
-`apply.unattended_evidence_ids`. The evidence allowlist is execution authority,
-not an upgrade to the evidence's epistemic rank. A copied cron line therefore
-cannot unexpectedly enable rewriting.
+unavailable while semantic verification is `not_run`. `cron --apply` may render
+an explicit command for forward compatibility, but runtime fails with
+`semantic_verification_required`. Evidence allowlisting and attended probation
+do not constitute behavioral qualification, and a copied cron line cannot enable
+rewriting.
 
 The initial local overlap detector has named, bounded heuristics only:
 `negation_pair` for the same normalized subject with opposite modal patterns,
@@ -280,6 +362,24 @@ Reports call these overlap candidates, not proven semantic conflicts. Offline
 token estimates use a documented conservative bytes heuristic and are labeled
 with the estimator version; the provider enforces configured limits again at the
 call boundary.
+
+## Why not a linter?
+
+Landscape snapshot: 2026-08-18. Adjacent tools already provide substantive
+instruction-health features. [claudelint](https://claudelint.com/) advertises 116
+rules across 10 categories and plugin-assisted restructuring;
+[cclint](https://www.npmjs.com/package/@felixgeelhaar/cclint) covers imports,
+hierarchy conflicts, duplicates, and fixes; [AgentLint](https://github.com/0xmariowu/AgentLint)
+and [agentlinter.com](https://agentlinter.com/) describe static, AI, and session
+checks plus fixes; [Reporails](https://reporails.com/) advertises local
+deterministic diagnostics and healing. Meditate does not claim these tools do
+nothing. Its narrower product distinction is exact disposition coverage for every
+configured pre-image directive, temporal interaction evidence, and
+content-addressed, recoverable exact-hash apply.
+
+The exact purported paper title `A Taxonomy of Agent Instruction Failures` by
+Gloaguen et al. was not verified and is not load-bearing. The verified paper is
+[`Coding Agents Don't Know When to Act`](https://arxiv.org/abs/2605.07769).
 
 ## Acceptance evidence
 

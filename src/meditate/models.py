@@ -102,6 +102,50 @@ class TargetDocument:
     mode: int
     existed: bool
     directives: tuple[Directive, ...]
+    scope_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ImportDocument:
+    """One document participating in a Claude @import graph."""
+
+    path: Path
+    logical_path: str
+    content: str
+    content_bytes: bytes
+    sha256: str
+    existed: bool
+    is_root: bool
+    configured_target: bool
+
+
+@dataclass(frozen=True)
+class ImportGraph:
+    """Validated Claude @import graph plus content kept out of public reports."""
+
+    roots: tuple[str, ...]
+    documents: tuple[ImportDocument, ...]
+    edges: tuple[tuple[str, str], ...]
+    digest: str
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "max_depth": 4,
+            "roots": list(self.roots),
+            "nodes": [
+                {
+                    "path": item.logical_path,
+                    "sha256": item.sha256,
+                    "bytes": len(item.content_bytes),
+                    "existed": item.existed,
+                    "root": item.is_root,
+                    "configured_target": item.configured_target,
+                }
+                for item in self.documents
+            ],
+            "edges": [{"from": source, "to": destination} for source, destination in self.edges],
+            "digest": self.digest,
+        }
 
 
 @dataclass(frozen=True)
@@ -151,6 +195,7 @@ class InspectionResult:
     events: tuple[EvidenceEvent, ...]
     selected_events: tuple[EvidenceEvent, ...]
     stats: SourceStats
+    import_graph: ImportGraph
     overlaps: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
     degraded: tuple[str, ...] = ()
@@ -163,6 +208,7 @@ class RunUsage:
     actual_input_tokens: int = 0
     actual_output_tokens: int = 0
     stop_reason: str = ""
+    model_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -171,6 +217,7 @@ class RunUsage:
             "actual_input_tokens": self.actual_input_tokens,
             "actual_output_tokens": self.actual_output_tokens,
             "stop_reason": self.stop_reason,
+            "model_id": self.model_id,
         }
 
 
@@ -188,3 +235,12 @@ class ValidatedPlan:
     directive_count: int
     blocked_reasons: tuple[str, ...] = ()
     usage: RunUsage = field(default_factory=RunUsage)
+    model_id: str = ""
+    prompt_version: str = ""
+    prompt_sha256: str = ""
+    semantic_verification: dict[str, str] = field(default_factory=dict)
+    post_directive_count: int = 0
+    escalated_directive_count: int = 0
+    metrics: dict[str, Any] = field(default_factory=dict)
+    import_graph_before: dict[str, Any] = field(default_factory=dict)
+    import_graph_after: dict[str, Any] = field(default_factory=dict)

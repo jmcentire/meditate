@@ -12,10 +12,13 @@ from .util import (
     SCHEMA_VERSION,
     MeditateError,
     atomic_write,
+    display_path,
     ensure_not_foreign_root,
     fail,
     sha256_bytes,
 )
+
+DEFAULT_CODEX_PROJECT_DOC_MAX_BYTES = 32_768
 
 
 @dataclass(frozen=True)
@@ -164,10 +167,13 @@ max_malformed_ratio = 0.02
 minimum_free_bytes = 5000000
 
 [apply]
+# Compatibility fields retained in schema version 1. They do not bypass the
+# owner-defined semantic qualification gate; unattended mutation is unavailable
+# while semantic_verification.status is not_run.
 allow_unattended_apply = false
 minimum_attended_applies = 3
-# Exact evidence IDs reviewed by a human and authorized to support unattended
-# changes. Find IDs in an attended plan report; regenerate after editing config.
+# Evidence allowlisting records review provenance but cannot establish behavioral
+# equivalence or make a plan unattended.
 unattended_evidence_ids = []
 
 [retention]
@@ -411,6 +417,22 @@ def with_llm_overrides(
         ),
     )
     return replace(config, llm=llm)
+
+
+def resolve_codex_project_doc_max_bytes(config: Config) -> tuple[int, str]:
+    """Resolve Codex's configured project-instruction byte budget conservatively."""
+
+    path = config.sources.codex_home / "config.toml"
+    try:
+        if path.is_symlink() or not path.is_file():
+            return DEFAULT_CODEX_PROJECT_DOC_MAX_BYTES, "default"
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        return DEFAULT_CODEX_PROJECT_DOC_MAX_BYTES, "default"
+    value = raw.get("project_doc_max_bytes")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        return DEFAULT_CODEX_PROJECT_DOC_MAX_BYTES, "default"
+    return value, display_path(path)
 
 
 def write_default_config(path: Path, *, force: bool = False) -> None:

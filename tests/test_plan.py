@@ -97,7 +97,7 @@ def test_plan_is_read_only_and_archives_exact_pre_and_post_images(
     assert packet["evidence_events_oldest_to_newest"][0]["id"] == "evt_correction"
 
 
-def test_exact_reviewed_evidence_can_compute_unattended_mode(
+def test_exact_reviewed_evidence_still_requires_attended_mode(
     config_factory: ConfigFactory,
 ) -> None:
     original = "# Git\n\n- Commit only when asked.\n"
@@ -109,8 +109,8 @@ def test_exact_reviewed_evidence_can_compute_unattended_mode(
         )
     )
     plan = create_plan(config, provider=provider, inspection=inspection(config, (reviewed,)))
-    assert plan.minimum_apply_mode == "unattended"
-    assert plan.raw_plan["changes"][0]["minimum_apply_mode"] == "unattended"
+    assert plan.minimum_apply_mode == "attended"
+    assert plan.raw_plan["changes"][0]["minimum_apply_mode"] == "attended"
 
 
 def test_noop_plan_converges_without_marking_target_changed(config_factory: ConfigFactory) -> None:
@@ -143,6 +143,9 @@ def test_plan_rejects_ungrounded_evidence_quote(config_factory: ConfigFactory) -
                     "evidence": [{"id": event["id"], "quote": "invented quote"}],
                     "reason": "fixture",
                     "minimum_apply_mode": "attended",
+                    "relocation_basis": "",
+                    "enforcement_target": "",
+                    "deterministic_check": "",
                 }
             ],
             "unresolved_conflicts": [],
@@ -396,6 +399,9 @@ def test_replace_cannot_consolidate_across_headings(config_factory: ConfigFactor
                     "evidence": [{"id": event["id"], "quote": event["text"]}],
                     "reason": "bad cross-heading consolidation",
                     "minimum_apply_mode": "attended",
+                    "relocation_basis": "",
+                    "enforcement_target": "",
+                    "deterministic_check": "",
                 }
             ],
             "unresolved_conflicts": [],
@@ -463,6 +469,9 @@ def test_relocate_within_same_file_moves_instead_of_replacing_in_place(
                     "evidence": [{"id": event["id"], "quote": event["text"]}],
                     "reason": "Scope-specific evidence places this under Project.",
                     "minimum_apply_mode": "attended",
+                    "relocation_basis": "organization",
+                    "enforcement_target": "",
+                    "deterministic_check": "",
                 }
             ],
             "unresolved_conflicts": [],
