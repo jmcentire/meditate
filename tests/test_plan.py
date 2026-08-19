@@ -8,7 +8,14 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all, replace_matching
+from helpers import (
+    StubProvider,
+    compiled_directive,
+    empty_compiled_directive,
+    inspection,
+    keep_all,
+    replace_matching,
+)
 
 from meditate.models import Authority, EvidenceEvent
 from meditate.plan import PLAN_SCHEMA, _packet, create_plan
@@ -337,7 +344,9 @@ def test_local_validation_rejects_invented_plan_references(
                 {
                     "action": "replace",
                     "source_ids": [source_id],
-                    "replacement": "- Commit completed changes after verification.",
+                    "compiled_directive": compiled_directive(
+                        "Commit completed changes after verification."
+                    ),
                     "destination_target": destination_target,
                     "heading_path": directive["heading_path"],
                     "evidence": [{"id": evidence_id, "quote": event["text"]}],
@@ -391,10 +400,10 @@ def test_non_relocate_change_rejects_another_allowed_destination_target(
                 {
                     "action": action,
                     "source_ids": [source["id"]],
-                    "replacement": (
-                        "- Commit completed changes after verification."
+                    "compiled_directive": (
+                        compiled_directive("Commit completed changes after verification.")
                         if action == "replace"
-                        else ""
+                        else empty_compiled_directive()
                     ),
                     "destination_target": other_target["target"],
                     "heading_path": source["heading_path"],
@@ -491,7 +500,7 @@ def test_plan_rejects_ungrounded_evidence_quote(config_factory: ConfigFactory) -
                 {
                     "action": "replace",
                     "source_ids": [directive["id"]],
-                    "replacement": "- Commit after tests.",
+                    "compiled_directive": compiled_directive("Commit after tests."),
                     "destination_target": target["target"],
                     "heading_path": directive["heading_path"],
                     "evidence": [{"id": event["id"], "quote": "invented quote"}],
@@ -526,6 +535,79 @@ def test_plan_rejects_urgency_not_present_in_source_or_evidence(
     with pytest.raises(MeditateError) as caught:
         create_plan(config, provider=provider, inspection=inspection(config, (correction(),)))
     assert caught.value.code == "unsupported_intensifier"
+
+
+def test_rfc_normative_keyword_is_not_an_unsupported_intensifier(
+    config_factory: ConfigFactory,
+) -> None:
+    config, _paths = config_factory(("# Git\n\n- Commit only when asked.\n",))
+    base_builder = replace_matching(
+        {"Commit only when asked": "Commit completed changes after `pytest` passes."}
+    )
+
+    def must_builder(packet: dict[str, Any]) -> dict[str, Any]:
+        raw = base_builder(packet)
+        raw["changes"][0]["compiled_directive"]["normative_keyword"] = "MUST"
+        return raw
+
+    plan = create_plan(
+        config,
+        provider=StubProvider(must_builder),
+        inspection=inspection(config, (correction(),)),
+    )
+    assert plan.raw_plan["changes"][0]["compiled_directive"]["normative_keyword"] == "MUST"
+
+
+def test_typed_scope_can_restate_grounded_universal_intensifier(
+    config_factory: ConfigFactory,
+) -> None:
+    config, _paths = config_factory(("# Kindex\n\n- Always search before adding.\n",))
+    evidence_text = "New rule: search before adding."
+    evidence = replace(
+        correction("evt_universal_scope"),
+        text=evidence_text,
+        content_sha256=sha256_bytes(evidence_text.encode()),
+    )
+    base_builder = replace_matching({"Always search": "Search before adding."})
+
+    def scoped_builder(packet: dict[str, Any]) -> dict[str, Any]:
+        raw = base_builder(packet)
+        compiled = raw["changes"][0]["compiled_directive"]
+        compiled["normative_keyword"] = "MUST"
+        compiled["scope"] = "Every Kindex capture operation"
+        return raw
+
+    plan = create_plan(
+        config,
+        provider=StubProvider(scoped_builder),
+        inspection=inspection(config, (evidence,)),
+    )
+    assert plan.raw_plan["changes"][0]["compiled_directive"]["scope"] == (
+        "Every Kindex capture operation"
+    )
+
+
+def test_plan_rejects_noncanonical_archive_root_before_provider_call(
+    config_factory: ConfigFactory,
+    tmp_path: Any,
+) -> None:
+    config, _paths = config_factory(("# Rules\n\n- Keep changes focused.\n",))
+    real_root = tmp_path / "canonical-data"
+    real_root.mkdir()
+    alias_root = tmp_path / "aliased-data"
+    alias_root.symlink_to(real_root, target_is_directory=True)
+    config = replace(config, data_root=alias_root)
+    provider = StubProvider(keep_all)
+
+    with pytest.raises(MeditateError) as caught:
+        create_plan(
+            config,
+            provider=provider,
+            inspection=inspection(config, (correction(),)),
+        )
+
+    assert caught.value.code == "unsafe_run_path"
+    assert provider.calls == 0
 
 
 def test_plan_rejects_bare_self_attested_verification(config_factory: ConfigFactory) -> None:
@@ -739,7 +821,9 @@ def test_replace_cannot_consolidate_across_headings(config_factory: ConfigFactor
                 {
                     "action": "replace",
                     "source_ids": [item["id"] for item in directives],
-                    "replacement": "- Push completed commits to account A.",
+                    "compiled_directive": compiled_directive(
+                        "Push completed commits to account A."
+                    ),
                     "destination_target": target["target"],
                     "heading_path": directives[0]["heading_path"],
                     "evidence": [{"id": event["id"], "quote": event["text"]}],
@@ -809,7 +893,7 @@ def test_relocate_within_same_file_moves_instead_of_replacing_in_place(
                 {
                     "action": "relocate",
                     "source_ids": [source["id"]],
-                    "replacement": source["text"],
+                    "compiled_directive": empty_compiled_directive(),
                     "destination_target": target["target"],
                     "heading_path": ["Project"],
                     "evidence": [{"id": event["id"], "quote": event["text"]}],

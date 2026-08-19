@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all
+from helpers import StubProvider, compiled_directive, inspection, keep_all
 
 import meditate.cli as cli
 import meditate.decisions as decisions
@@ -284,7 +284,7 @@ def _patch_cli_provider(
         )
 
     monkeypatch.setattr(AnthropicProvider, "complete", complete)
-    monkeypatch.setenv("WANDER_ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
     return packets
 
 
@@ -2058,7 +2058,9 @@ def _protected_change_plan(packet: dict[str, Any]) -> dict[str, Any]:
             {
                 "action": "replace",
                 "source_ids": [source["id"]],
-                "replacement": "- Require two operator handoffs before deployment.",
+                "compiled_directive": compiled_directive(
+                    "Require two operator handoffs before deployment."
+                ),
                 "destination_target": target["target"],
                 "heading_path": source["heading_path"],
                 "evidence": [{"id": event["id"], "quote": event["text"]}],
@@ -2181,7 +2183,7 @@ def _unsafe_workflow_successor(packet: dict[str, Any]) -> dict[str, Any]:
             {
                 "action": "replace",
                 "source_ids": [directive["id"] for directive in directives],
-                "replacement": f"- {BAD_WORKFLOW}",
+                "compiled_directive": compiled_directive(BAD_WORKFLOW),
                 "destination_target": target["target"],
                 "heading_path": directives[0]["heading_path"],
                 "evidence": [{"id": event["id"], "quote": event["text"]}],

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all, replace_matching
+from helpers import StubProvider, inspection, keep_all, qualify_plan, replace_matching
 
 import meditate.transaction as transaction
 from meditate.cli import main
@@ -361,6 +361,7 @@ def test_pre_apply_import_drift_fails_before_target_write(
     tmp_path: Path,
 ) -> None:
     config, root, imported, original, plan = _replacement_plan_with_import(config_factory, tmp_path)
+    qualify_plan(config, plan.run_id)
     imported.write_text("# Context\n\n- Drifted after planning.\n", encoding="utf-8")
     with pytest.raises(MeditateError) as caught:
         apply_run(
@@ -384,6 +385,7 @@ def test_post_write_import_graph_mismatch_rolls_back_changed_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, root, imported, original, plan = _replacement_plan_with_import(config_factory, tmp_path)
+    qualify_plan(config, plan.run_id)
     actual_replace = transaction._replace_target
     injected = False
 

@@ -71,6 +71,16 @@ class SafetyConfig:
 
 
 @dataclass(frozen=True)
+class VerificationConfig:
+    suite: Path | None = None
+    agent: str = "claude"
+    model: str = ""
+    repeats: int = 3
+    timeout_seconds: int = 180
+    max_output_chars: int = 20_000
+
+
+@dataclass(frozen=True)
 class ApplyConfig:
     allow_unattended_apply: bool = False
     minimum_attended_applies: int = 3
@@ -94,6 +104,7 @@ class Config:
     kindex: KindexConfig
     llm: LLMConfig
     safety: SafetyConfig
+    verification: VerificationConfig
     apply: ApplyConfig
     retention: RetentionConfig
     raw_bytes: bytes
@@ -138,6 +149,9 @@ max_transcript_files = 20
 lookback_days = 0
 
 [kindex]
+# When enabled and `kin` is installed, every configured search is required.
+# A failed search or node read aborts before planning rather than silently
+# dropping the durable evidence source.
 enabled = true
 command = "kin"
 queries = [
@@ -166,14 +180,23 @@ max_churn_ratio = 0.65
 max_malformed_ratio = 0.02
 minimum_free_bytes = 5000000
 
+[verification]
+# Owner-authored JSON suite. It is never sent to the consolidation planner.
+suite = ""
+agent = "claude" # claude or codex
+model = ""
+repeats = 3
+timeout_seconds = 180
+max_output_chars = 20000
+
 [apply]
 # Compatibility fields retained in schema version 1. They do not bypass the
-# owner-defined semantic qualification gate; unattended mutation is unavailable
-# while semantic_verification.status is not_run.
+# owner-defined semantic qualification gate. A changed plan still needs its own
+# passed, hash-bound verification receipt before any apply mode can write.
 allow_unattended_apply = false
 minimum_attended_applies = 3
 # Evidence allowlisting records review provenance but cannot establish behavioral
-# equivalence or make a plan unattended.
+# equivalence or substitute for the owner suite.
 unattended_evidence_ids = []
 
 [retention]
@@ -242,6 +265,7 @@ def load_config(path: Path | None = None) -> Config:
     kindex_raw = _table(raw, "kindex")
     llm_raw = _table(raw, "llm")
     safety_raw = _table(raw, "safety")
+    verification_raw = _table(raw, "verification")
     apply_raw = _table(raw, "apply")
     retention_raw = _table(raw, "retention")
 
@@ -302,7 +326,7 @@ def load_config(path: Path | None = None) -> Config:
         timeout_seconds=_positive(llm_raw.get("timeout_seconds", 300), "llm.timeout_seconds"),
     )
     if llm.provider != "anthropic":
-        fail("unsupported_provider", "Version 0.1 supports provider = 'anthropic' only")
+        fail("unsupported_provider", "This release supports provider = 'anthropic' only")
     if llm.effort not in {"low", "medium", "high", "xhigh", "max"}:
         fail("invalid_config", "llm.effort must be low, medium, high, xhigh, or max")
 
@@ -337,6 +361,18 @@ def load_config(path: Path | None = None) -> Config:
     if len(set(unattended_ids_raw)) != len(unattended_ids_raw):
         fail("invalid_config", "apply.unattended_evidence_ids contains duplicates")
 
+    suite_raw = verification_raw.get("suite", "")
+    if not isinstance(suite_raw, str):
+        fail("invalid_config", "verification.suite must be a path string")
+    verification_agent = _string(
+        verification_raw.get("agent", "claude"), "verification.agent"
+    ).casefold()
+    if verification_agent not in {"claude", "codex"}:
+        fail("invalid_config", "verification.agent must be claude or codex")
+    verification_model_raw = verification_raw.get("model", "")
+    if not isinstance(verification_model_raw, str):
+        fail("invalid_config", "verification.model must be a string")
+
     config = Config(
         config_path=selected,
         targets=targets,
@@ -348,6 +384,20 @@ def load_config(path: Path | None = None) -> Config:
         kindex=kindex,
         llm=llm,
         safety=safety,
+        verification=VerificationConfig(
+            suite=(Path(suite_raw).expanduser().absolute() if suite_raw.strip() else None),
+            agent=verification_agent,
+            model=verification_model_raw.strip(),
+            repeats=_positive(verification_raw.get("repeats", 3), "verification.repeats"),
+            timeout_seconds=_positive(
+                verification_raw.get("timeout_seconds", 180),
+                "verification.timeout_seconds",
+            ),
+            max_output_chars=_positive(
+                verification_raw.get("max_output_chars", 20_000),
+                "verification.max_output_chars",
+            ),
+        ),
         apply=ApplyConfig(
             allow_unattended_apply=_boolean(
                 apply_raw.get("allow_unattended_apply", False),

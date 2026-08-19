@@ -14,6 +14,7 @@ from meditate.config import (
     RetentionConfig,
     SafetyConfig,
     SourceConfig,
+    VerificationConfig,
 )
 
 ConfigFactory = Callable[..., tuple[Config, tuple[Path, ...]]]
@@ -64,6 +65,7 @@ def config_factory(tmp_path: Path) -> ConfigFactory:
             kindex=KindexConfig(enabled=False),
             llm=llm or LLMConfig(max_input_tokens=50_000, max_total_input_tokens=50_000),
             safety=chosen_safety,
+            verification=VerificationConfig(),
             apply=apply or ApplyConfig(),
             retention=RetentionConfig(),
             raw_bytes=b"synthetic-config-v1\n",

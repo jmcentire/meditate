@@ -2,10 +2,11 @@
 
 ## Outcome
 
-Build a locally operated CLI that consolidates, compresses, and simplifies behavioral
-directives used by Claude Code and OpenAI Codex. Its job is conflict resolution,
-not summary-by-deletion: it must replace obsolete or contradictory rules with a
-smaller coherent set while retaining recoverable provenance.
+Build a locally operated CLI that resolves identified defects in behavioral
+directives used by Claude Code and OpenAI Codex. Stability is the fixed point:
+a well-formed directive set must survive byte-identically, while a defective set
+must converge without silently losing behavior. Size is telemetry, not an
+objective function.
 
 **Authority before confidence is the first invariant.** Model fluency, evidence
 volume, and deterministic structural checks do not grant permission or prove
@@ -20,6 +21,9 @@ interaction corpus or secret-bearing excerpt may be committed to this repo.
 The observed failure is monotonic append. A correction becomes a new clause,
 but the rule that caused the correction is rarely rewritten. Contradiction is a
 symptom; accumulated exceptions with no replacement relation are the mechanism.
+Turning “nothing changed” into “something must shrink” recreates the same failure
+as an unbounded objective: repeated runs erode a valid file. Meditate therefore
+optimizes defect resolution and treats a no-op as a first-class success.
 
 The local writable surface is narrow: global and project instruction files,
 path-scoped rule files, auto-memory, compaction/session artifacts, and workspace
@@ -163,7 +167,10 @@ Meditate never invents a glob. Codex target interpretation follows the official
   claim of semantic conflict unless a deterministic rule proves one, and makes
   no model call.
 - `meditate plan`: build a sanitized evidence packet, call the selected model,
-  validate structured output, and write a proposal/report. It changes no target.
+  validate structured output, and write a proposal/report. If the local detector
+  finds no candidate, it produces a zero-call stable no-op. It changes no target.
+- `meditate verify RUN_ID`: run the owner-authored suite that was excluded from
+  planner input against control, predecessor, and candidate instruction bundles.
 - `meditate decisions RUN_ID`: verify an immutable archive and render its one
   pending `a`/`b`/`c`/custom authority question plus shell-quoted response forms
   and argv arrays that retain the selected config path.
@@ -173,7 +180,7 @@ Meditate never invents a glob. Codex target interpretation follows the official
 - `meditate apply RUN_ID`: revalidate source hashes, archive every target plus a
   manifest, atomically replace targets, and emit an apply receipt.
 - `meditate run`: inspect + plan. Cron uses this surface. An explicit `--apply`
-  currently fails with `semantic_verification_required` rather than mutating.
+  verifies a changed plan with the configured suite before requesting unattended apply.
 - `meditate restore RUN_ID`: restore archived targets transactionally, refusing
   to overwrite post-run changes unless `--force` is given.
 - `meditate cron`: print a locked cron entry or check its dependencies. Meditate
@@ -199,25 +206,37 @@ model is selected silently. Pre-call accounting uses a conservative upper bound;
 actual usage is reconciled after every call, and budget exhaustion cancels later
 stages. Truncated/max-token output is an invalid plan.
 
-Anthropic key lookup supports, in order, the actual local
-`WANDER_ANTHROPIC_API_KEY`, `ANTHROPIC_API_KEY`, `JMC_ANTHROPIC_API_KEY`, then the
-deprecated misspelled compatibility alias `WANDER_ANTRHOPIC_API_KEY`. Values are
-never logged.
+Anthropic planning uses the standard `ANTHROPIC_API_KEY` environment variable.
+Clean-room Codex consumer verification requires `OPENAI_API_KEY`. Credential
+values are read only at runtime and are never logged or persisted in plans,
+reports, or archives.
+No product source, test, documentation, or release artifact contains a private
+company-specific credential name.
 
 Large corpora use a bounded pipeline:
 
-1. Local parsing, deduplication, classification, and redaction.
-2. Deterministic selection of high-signal events within a configured budget.
-3. One consolidation call over current directives plus locally derived candidate
-   evidence. Model-based candidate extraction is not part of the first version.
-4. Deterministic validation; a second model judging the first is not an authority
-   or a required safety gate.
+1. Local parsing, redaction, and defect-candidate derivation.
+2. Required Kindex searches when configured and installed, plus deterministic
+   selection of high-signal historical events within budget.
+3. A zero-call no-op when no candidate exists; otherwise one consolidation call
+   over the complete non-overlapping candidate set plus bounded immutable context.
+4. Deterministic rendering and a post-image detector pass. A confirmed defect
+   remaining in a changed post-image rejects the plan.
+5. Independent owner-authored behavioral qualification on the consumer agent;
+   that suite is not visible to the planner and cannot grant source authority.
 
 Source readers process JSONL line by line, bound individual record size, and do
 not need a corpus-sized in-memory parse. Malformed/unknown records are counted and
 skipped; a partial or degraded corpus run is visible and blocks apply. The parser
 version is bound into every archived plan so a validator change invalidates old
 plans rather than silently reinterpreting them.
+
+Kindex has a stronger boundary than optional history enrichment. When
+`kindex.enabled=true` and the configured `kin` executable is installed, every
+configured search and every selected node read is required. A command failure or
+invalid JSON aborts before the planner with `kindex_required_failed`; Meditate does
+not silently continue with a partial durable-memory view. When `kin` is absent,
+the inspection reports `kindex_unavailable` without pretending it was queried.
 
 Each target and aggregate summary records pre/post directive, UTF-8 byte, and
 line counts with deltas, while changed and escalated directives remain separate
@@ -235,15 +254,25 @@ headings, top-level list items (nested items stay attached), blank-line-delimite
 paragraphs, and opaque fenced code blocks. Pre-image directive IDs are minted
 locally from the schema version, target identity, heading path, and normalized
 content; the model may reference only existing IDs and cannot mint durable IDs.
-Output must provide a disposition for every pre-image directive exactly once:
-kept, replaced, removed, relocated, or escalated.
+Output plus local completion provides a disposition for every pre-image directive
+exactly once: kept, replaced, removed, relocated, or escalated. The provider sees
+only candidate IDs; local code adds all non-candidate IDs to `keep`.
 
 The model returns JSON operations, not regenerated files. Unchanged spans are
-copied byte-for-byte from the pre-image; edited/consolidated operations carry
-only replacement text and predecessor IDs; relocation names an allowed target
-and heading. Meditate renders complete proposals deterministically. This makes
-byte-identical unchanged directives and no-op convergence construction
-properties rather than hopes about model formatting.
+copied byte-for-byte from the pre-image. A semantic replacement is not free
+Markdown: it carries a typed `compiled_directive` record with a normative keyword,
+rule, behavioral reason, scope, and optional boundary example. Meditate validates
+and renders canonical Markdown locally. Byte-exact relocation may leave the record
+empty; remove and report-only escalate must. This makes byte-identical unchanged
+directives and no-op convergence construction properties rather than hopes about
+model formatting.
+
+The normative keyword is one of `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, or
+`MAY`, used with RFC 2119 semantics. `SHOULD` is a strong defeasible default, not
+a weaker spelling of `MUST`; the reason records why the rule exists so legitimate
+exceptions can be derived without appending an exception list. Scope is mandatory.
+One boundary example is optional only when it materially pins an applies/does-not-
+apply edge. It remains untrusted prose, not an executable test.
 
 Every change, including remove and escalate, must copy its `destination_target`
 byte-for-byte from `allowed_targets`. The string is opaque: the model may not
@@ -255,11 +284,11 @@ The model returns JSON with:
 
 - kept directive IDs;
 - replacement/removal/relocation/escalation operations with predecessor IDs, exact
-  allowlisted destination, heading, replacement text, reason, and evidence;
+  allowlisted destination, heading, typed compiled record, change reason, and evidence;
 - exact evidence IDs and matching sanitized quotes for every change;
 - unresolved conflicts that block apply;
 - `decision_request: null` or one bounded unresolved authority collision;
-- a concise human report.
+- no model-authored report summary; local code derives defect and disposition output.
 
 ### Bounded authority-decision contract
 
@@ -350,7 +379,7 @@ This record is operator-asserted user authority: identity is not authenticated o
 attested, and the process cannot prove an invoking agent relayed the user's real answer. The choice
 is scoped to its collision and cannot bypass protected directives, deterministic
 safety, or higher-scope loaded authority. Structural validation and the choice
-do not change `semantic_verification.status = not_run`.
+do not satisfy a changed successor's independent behavioral qualification.
 
 `escalate` is report-only. It applies to one current directive, keeps its source
 prose byte-for-byte at the same target and heading, names `hook` or `settings` as
@@ -370,11 +399,13 @@ not averaged into less precise prose.
 Validation rejects unknown evidence IDs, evidence citations without a quoted
 span matching the sanitized record, missing or duplicate directive dispositions,
 unknown IDs, empty targets, unresolved conflicts, targets outside configuration,
-size below the configured floor or above the ceiling, directive-count growth,
+size below the configured floor or beyond the configured ratio plus absolute
+growth headroom, directive-count growth,
 excessive churn, protected-section changes, unsupported urgency or operational
 actions, self-attested verification, vague high-impact action authority, and any
-surviving secret match. Re-running on unchanged sources should converge to a
-near-zero proposal rather than rephrasing everything.
+surviving secret match. Byte delta is reported but cannot itself accept or reject
+a plan. Re-running a well-formed source produces a byte-identical, zero-call
+`stable_noop`, not a near-zero rephrasing.
 
 Configured protected headings or marker-delimited blocks are copied through
 byte-identically and are excluded from model mutation. They remain present in
@@ -398,68 +429,109 @@ required all project tests and CI before commit and treated `commit`, `merge`, a
 `push` as a universal sequence. Release review caught the bad form even though the
 prior validator admitted it; the run is now a regression fixture the new
 deterministic gate must reject. It does not qualify a successor directive
-semantically; `semantic_verification.status` remains `not_run` pending an
-owner-authored behavioral suite.
+semantically; only a separate planner-blind owner-authored behavioral suite can.
 
-## Deterministic consolidation quality
+## Fixed-point and defect contract
 
-Live prompt-v5 qualification run `20260819T013715Z-67de2a2b` was rejected and
-never applied. Its proposal increased aggregate target size by 898 bytes,
-repeated a workflow-order clause, added “other applicable actions,” and supplied
-a model summary of 62 remaining directives while the renderer validated 64.
-These facts are structural proposal evidence, not behavioral qualification.
+The objective is defect resolution, ordered by correctness, checkability, scope
+precision, then concision. `pre_bytes`, `post_bytes`, and their delta are telemetry.
+Output may grow when its typed rationale replaces brittle enumerated exceptions;
+growth is visible and still subject to configured safety and consumer budgets, but
+is not by itself a quality failure.
 
-Prompt v6 removes `summary` from the provider output schema, and parser v20
-rejects that stale model-owned field. Meditate derives the report summary from
-validated disposition/action counts, unresolved conflicts, and aggregate
-pre/post directive and byte metrics. A replacement fails with
-`repeated_replacement_phrase` when any normalized contiguous eight-word window
-occurs twice. It fails with `unsupported_action_catch_all` when it newly adds
-“other/additional applicable actions,” “and similar,” “etc,” or “and so on”
-without that exact catch-all in a source directive or exact cited evidence.
+Preflight v4 currently has one confirmed defect class, `exact_duplicate`, and one
+review-candidate class, `exception_lineage`. Exception lineage requires at least
+two exception-bearing directives in the same heading with at least two shared
+subject terms. Density and history overlap are never defects by themselves.
+Review candidates are not declared wrong merely because the detector selected
+them. This soundness distinction prevents a lexical false positive from making a
+valid file permanently unacceptable.
 
-Compression is enforced across all configured writable targets, not per
-directive. When aggregate `post_bytes > pre_bytes`, Meditate archives the plan
-and reports `compression_regression`, but emits no apply command and rejects
-apply. A compact corrective rewrite may therefore make one directive longer if
-the aggregate configured target set still shrinks.
+The provider receives the complete non-overlapping candidate set and only those
+directive IDs; unrelated IDs are hidden and locally kept. A change cannot cross
+candidate, heading, or subject boundaries. After deterministic rendering,
+Meditate segments the complete post-image and rejects any changed plan that
+leaves a confirmed defect. A review candidate may remain when the model keeps it.
+Reports separately name detected, resolved, and unresolved classes and distinguish
+`stable_noop`, `reviewed_noop`, and a candidate requiring behavioral qualification.
 
-### Final prompt-v6 live receipts
-
-Claude run `20260819T015515Z-120c6869` covered 65 pre-image directives: 64 keep/1
-replace. Its proposal was +720 aggregate bytes, so it was archived
-with `compression_regression`, exposed no apply command, and left the target SHA
-unchanged at `441fe6e9...`. Codex run `20260819T015632Z-a4fde49b` kept 33/33
-directives, with zero changes/conflicts/delta; configured-target coverage was
-4,276/32,768 bytes. It exposed no apply command and left the
-target SHA unchanged at `0dd415bb...`.
-
-Both receipts bind prompt v6 SHA `61f949...`, parser `meditate-parser-v20`, model
-`claude-sonnet-4-6`, and `semantic_verification=not_run`. They qualify safe
-no-op and fail-closed blocking mechanics only, not behavioral equivalence.
+The acceptance contract is executable: a well-formed fixture remains unchanged;
+a defective fixture is corrected; both are run again and remain byte-identical;
+a well-formed fixture is run ten times without drift; and a multi-defect fixture
+must resolve every confirmed cluster in one successful plan. A partial multi-
+defect rewrite fails with `non_idempotent_proposal` before an archive is published.
 
 ## Structural and semantic gates
 
 Structural validation proves schema coverage, exact quote grounding, allowlisted
-destinations, deterministic rendering, bounded churn/size, secret screening,
-archive integrity, and source/config/import-graph freshness. It is not behavioral
-qualification: those checks do not prove that a consolidation preserves the
-observable behavior of all predecessor directives.
+destinations, deterministic typed rendering, bounded churn/safety size, secret
+screening, archive integrity, and source/config/import-graph freshness. It does
+not prove observable behavior.
 
-Every new plan and manifest retain `schema_version` and the requested `model`,
-and carry an identical API-returned resolved `model_id` (falling back to the
-requested identifier only when the response omits it), `prompt_version`, `prompt_sha256`, and
-`semantic_verification = {"status":"not_run","method":"owner_defined_behavioral_suite"}`.
-The exact system-prompt UTF-8 hash and all provenance fields are part of
-`plan_sha256`; archive loading cross-checks the plan and manifest, and apply
-rejects local prompt drift.
+Every changed plan and manifest records
+`semantic_verification={"status":"required","method":"owner_defined_hidden_detector_suite_v2"}`.
+`meditate verify` loads an owner-authored suite from an explicit path or config;
+the suite bytes were never sent to the planner. Each probe/counter-probe runs in
+control, pre-image, and post-image conditions for the configured repeat count.
+The consumer sees neutral scenarios and opaque case references, not semantic case
+IDs, action IDs, detector phrases, or assertions. It returns an ordered free-form
+plan. Bounded local literal detectors derive observable actions after generation;
+local assertions check required, forbidden, and ordered behavior. Verification
+requires suite coverage for every changed source directive and writes immutable
+suite/verification artifacts plus JSON and Markdown reports.
 
-There is deliberately no in-product transition to `passed`. Until the owner
-authors an independent behavioral suite, every mutating operation and every
-changed plan has a locally computed minimum mode of `attended`. Exact evidence
-allowlisting cannot upgrade it. `apply_run(..., mode="unattended")` fails before
-target writes with `semantic_verification_required`; attended apply with the
-exact plan SHA remains valid. Reports say this plainly and require human review.
+The receipt binds plan and pre-execution suite hashes, target pre/post hashes,
+verifier prompt/schema/system-prompt hashes, consumer agent, consumer CLI version,
+requested/resolved model, repeat count, case outcomes, and response hashes. Apply
+reconstructs those bindings and accepts only a passed exact receipt.
+A candidate passes only when it satisfies every case on every repeat, no case's
+post count falls below its predecessor count, and each designated control is
+strictly weaker than the candidate. A predecessor miss is reported as a baseline
+gap; a candidate repair is reported as an improvement. Baseline imperfection does
+not excuse a candidate miss or create a veto over an all-green, non-regressing
+candidate. Codex verification replaces ambient `CODEX_HOME` with a fresh private
+directory, ignores user config and rules, and requires `OPENAI_API_KEY` so the
+control cannot inherit global instructions or memory.
+
+A pass proves only the owner-selected cases on the recorded consumer/version/model;
+it is not universal equivalence. The planner cannot write or see its oracle.
+
+No-change plans use `semantic_verification.status=not_applicable`. Unattended
+apply remains a separate authority classification: it needs the explicit config
+switch, attended-history threshold, a low-blast-radius replacement-only shape,
+and the same passed receipt. Evidence allowlisting and model confidence cannot
+substitute for behavioral qualification.
+
+### v0.2.0 qualification evidence
+
+The restored live Claude and Codex files first produced byte-identical zero-call
+`stable_noop` runs `20260819T161206Z-d6dbad85` and
+`20260819T161218Z-834d615b`. Their SHA-256 values remained
+`441fe6e9af0302329b753fa9138f6a5fc5c556637991bfec679700adea1acb76` and
+`0dd415bb140f10fe95c70005e33ca523f1ed60419a79bbfeabdf9a31446c6b63`.
+
+On disposable copies with one inserted exact duplicate:
+
+- Claude plan `20260819T165955Z-1987f9ef` changed 67 directives/11,606 bytes to
+  66 directives/11,378 bytes. Claude Code 2.1.224 with `claude-sonnet-4-6`
+  scored pre 18/18, post 18/18, and control 0/18. Verification SHA
+  `4f1851d08ddb4047243f6978204bda6b29ad59d245dd744a020e31321eb878aa`
+  authorized attended disposable apply; second run
+  `20260819T170602Z-39e3bba4` was a byte-identical zero-call no-op.
+- Claude run `20260819T165129Z-70f323ea` scored pre 18/18 and post 17/18 after a
+  lower-position rewrite. It failed closed and was never applied.
+- Codex plan `20260819T171655Z-546b02cd` changed 35 directives/5,269 bytes to
+  34 directives/4,830 bytes. Codex CLI 0.147.0 with `gpt-5.6-sol` in a fresh
+  private `CODEX_HOME` scored post 18/18 and control 0/18. One predecessor repeat
+  miss was repaired and recorded as both a baseline gap and candidate improvement.
+  Verification SHA
+  `0376960893146c8f9f29559da0fee2a9f14a0b182eae3759689dda2b0e915b1d`
+  authorized attended disposable apply; second run
+  `20260819T171954Z-d68b18c5` was a byte-identical zero-call no-op.
+
+This evidence is deliberately bounded to the six owner-authored Kindex cases,
+consumer versions, and models named above. It is not universal behavioral
+equivalence.
 
 ## Archive and transaction contract
 
@@ -513,11 +585,11 @@ resolved at runtime. `meditate cron` emits an entry and `cron --check` validates
 the resolved executable, config, profile, current key source, Kindex command, and
 target paths; Meditate does not install the entry itself.
 The generated entry defaults to `run` without apply. Unattended mutation remains
-unavailable while semantic verification is `not_run`. `cron --apply` may render
-an explicit command for forward compatibility, but runtime fails with
-`semantic_verification_required`. Evidence allowlisting and attended probation
-do not constitute behavioral qualification, and a copied cron line cannot enable
-rewriting.
+disabled by default. `cron --apply` renders a `run --apply` command that first
+executes the configured owner suite for a changed plan and stops on failure;
+the normal unattended config and probation gates still apply. Evidence
+allowlisting, a copied cron line, and attended probation do not constitute
+behavioral qualification.
 
 The initial local overlap detector has named, bounded heuristics only:
 `negation_pair` for the same normalized subject with opposite modal patterns,
@@ -529,11 +601,11 @@ call boundary.
 
 ## Release and distribution
 
-Package metadata and the runtime version are synchronized at `0.1.0`. The
+Package metadata and the runtime version are synchronized at `0.2.0`. The
 canonical public distribution surface is the versioned wheel attached to the
-`v0.1.0` GitHub Release:
+`v0.2.0` GitHub Release:
 
-`https://github.com/jmcentire/meditate/releases/download/v0.1.0/meditate_agent-0.1.0-py3-none-any.whl`
+`https://github.com/jmcentire/meditate/releases/download/v0.2.0/meditate_agent-0.2.0-py3-none-any.whl`
 
 The repository CI checks Ruff, strict mypy, pytest across supported Python
 versions, and an isolated wheel build. It does not publish. PyPI publication is

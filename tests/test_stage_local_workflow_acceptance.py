@@ -120,7 +120,7 @@ def test_loaded_workflow_order_and_stage_available_project_checks_pass_structura
 
     assert plan.changed_directive_count == 1
     proposed = {str(path): content for path, content in plan.proposed_contents.items()}
-    assert replacement in proposed[str(target)]
+    assert replacement.removeprefix("- ") in proposed[str(target)]
     for action in ("commit", "merge", "release", "deploy"):
         assert action in proposed[str(target)]
 
@@ -146,9 +146,9 @@ def test_prompt_encodes_action_coverage_not_order_and_stage_availability() -> No
     assert re.search(r"stop.{0,100}approval.{0,100}named\s+handoff", prompt)
 
 
-def test_prompt_v6_parser_v20_require_literal_destination_targets_for_every_change() -> None:
-    assert PLAN_PROMPT_VERSION == "6"
-    assert PARSER_VERSION == "meditate-parser-v20"
+def test_prompt_v9_parser_v24_require_literal_destination_targets_for_every_change() -> None:
+    assert PLAN_PROMPT_VERSION == "10"
+    assert PARSER_VERSION == "meditate-parser-v25"
     prompt = " ".join(SYSTEM_PROMPT.lower().split())
     assert re.search(
         r"every\s+change.{0,180}destination_target|"
