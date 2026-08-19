@@ -317,17 +317,17 @@ def test_inspection_json_exposes_text_free_import_graph(
 
 
 def _replacement_plan_with_import(config_factory: ConfigFactory, tmp_path: Path):
-    original = "# Git\n\n- Commit only when asked.\n\n@context.md\n\n- Preserve unrelated edits.\n"
+    obsolete = (
+        "Commit only when asked, even when completed work has passed all project-required "
+        "checks and is ready."
+    )
+    original = f"# Git\n\n- {obsolete}\n\n@context.md\n\n- Preserve unrelated edits.\n"
     config, root = _config_with_root(config_factory, tmp_path, original)
     imported = root.parent / "context.md"
     imported.write_text("# Context\n\n- Preserve imported context.\n", encoding="utf-8")
     provider = StubProvider(
         replace_matching(
-            {
-                "Commit only when asked": (
-                    "- Commit completed work after project-required checks pass."
-                )
-            }
+            {obsolete: ("- Commit completed work after project-required checks pass.")}
         )
     )
     plan = create_plan(

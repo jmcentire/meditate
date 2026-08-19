@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install verification tools
+        run: python -m pip install --upgrade pip build && python -m pip install -e ".[dev]"
+      - name: Ruff format
+        run: python -m ruff format --check .
+      - name: Ruff lint
+        run: python -m ruff check .
+      - name: Strict mypy
+        run: python -m mypy --strict src/meditate
+      - name: Pytest
+        run: python -m pytest
+      - name: Isolated wheel build
+        run: python -m build --wheel --outdir dist

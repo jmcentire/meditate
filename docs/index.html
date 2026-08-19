@@ -45,7 +45,7 @@
       <div class="hero-orbit orbit-two" aria-hidden="true"></div>
       <div class="shell hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> Local control plane · Anthropic-backed plans · Alpha</p>
+          <p class="eyebrow"><span class="status-dot"></span> v0.1.0 alpha · Local control plane · Anthropic-backed plans</p>
           <h1>Rewrite the rule.<br><em>Not another exception.</em></h1>
           <p class="hero-lede"><strong>Authority before confidence.</strong> A fluent rewrite has no
             authority of its own; current instructions, explicit corrections, scope, and handoff
@@ -178,7 +178,10 @@
           <p>
             Contextual guidance relocates only into an exact configured Claude rule with a
             non-empty <code>paths:</code> list. Meditate never invents a glob or averages separate
-            contexts into vague prose.
+            contexts into vague prose. Every change copies its destination literally from
+            <code>allowed_targets</code>: target strings are opaque, so <code>~</code> is never
+            expanded and paths are never normalized, absolutized, or invented. Non-relocates copy
+            the source target; relocation chooses another exact configured target.
           </p>
         </div>
         <div class="feature-grid">
@@ -251,7 +254,7 @@
           <article class="flow-step">
             <span>4</span>
             <h3>Verify</h3>
-            <p>Reject unknown IDs, invented quotes, unscoped moves, import drift, excessive churn, or secrets.</p>
+            <p>Reject unknown IDs, invented quotes, unscoped moves, import drift, target changes during the model call, excessive churn, or secrets.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
@@ -262,6 +265,59 @@
         </div>
 
         <div class="boundary-note">
+          <p class="boundary-title">Workflow order is repository-defined; verification is stage-local</p>
+          <p>
+            Cited action lists establish coverage, never universal order. High-impact proposals
+            must follow the exact loaded repository and documented workflow order. Before each
+            action, only checks that are applicable, project-required, and available before that
+            action may be required.
+            Push-, PR-, and merge-triggered CI, approvals, and named handoffs are each evaluated at
+            their own stage, where they exist. Requiring all CI before commit is forbidden. That unsafe universal
+            gate is rejected in every replacement or relocation, even when its remote actions
+            already existed. Restored-baseline run <code>20260818T231558Z-6e8e4703</code> was
+            rejected and not applied for violating this
+            rule. Release review caught what the prior validator admitted; the run is now a
+            regression fixture the new gate must reject, not behavioral qualification. Semantic
+            verification remains <code>not_run</code>.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">Consolidation must reduce the configured instruction set</p>
+          <p>
+            Prompt v6/parser v20 remove model summary authorship: each deterministic report
+            summary is locally computed from validated dispositions, conflicts, and metrics.
+            Model-authored summaries are forbidden and rejected.
+            Replacements fail when a normalized
+            eight-word phrase repeats or when they newly add unsupported catch-alls such as
+            “other applicable actions,” “and similar,” or “etc.” Aggregate byte growth is archived
+            with <code>compression_regression</code>, emits no apply command, and cannot apply.
+            An individual directive may grow only when aggregate configured-target bytes decrease.
+          </p>
+          <p>
+            Live prompt-v5 run <code>20260819T013715Z-67de2a2b</code> was rejected and not applied:
+            it grew by 898 bytes, repeated workflow prose, introduced “other applicable actions,”
+            and disagreed with the local directive count. That is structural proposal evidence,
+            not semantic qualification.
+          </p>
+          <p>
+            Final prompt-v6 Claude run <code>20260819T015515Z-120c6869</code> covered 65
+            directives as 64 keep/1 replace. Its +720-byte proposal was blocked with
+            <code>compression_regression</code>, emitted no apply command, and left target SHA
+            <code>441fe6e9...</code> unchanged. Codex run
+            <code>20260819T015632Z-a4fde49b</code> kept 33/33 directives with zero
+            changes/conflicts/delta, reported 4,276/32,768 configured-target bytes, emitted no
+            apply command, and left target SHA <code>0dd415bb...</code> unchanged.
+          </p>
+          <p>
+            Both used prompt v6 SHA <code>61f949...</code>, parser
+            <code>meditate-parser-v20</code>, model <code>claude-sonnet-4-6</code>, and
+            <code>semantic_verification=not_run</code>. These receipts qualify safe no-op and fail-closed
+            blocking behavior only, not behavioral equivalence.
+          </p>
+        </div>
+
+        <div class="boundary-note">
           <p class="boundary-title">Structural validation is not behavioral qualification</p>
           <p>
             Every plan retains the requested model and binds the API-returned resolved model ID,
@@ -269,6 +325,49 @@
             <code>semantic_verification: not_run</code>. Until an owner-authored behavioral suite
             exists, every mutation is attended-only, unattended apply fails closed, and human
             report/diff review remains required.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">A real authority collision becomes one bounded question</p>
+          <p>
+            Mere ambiguity keeps the current prose and remains blocked. Only a materially
+            behavior-changing collision between at least two preserved directives, with
+            equal-authority/equal-scope evidence at the same timestamp and conservative local evidence
+            of mutual exclusion, may produce one <code>decision_request</code> with
+            <code>a</code>/<code>b</code>/<code>c</code>/custom choices. Differing authority, scope,
+            or time already determines precedence; older evidence
+            remains lineage rather than an equal choice. The model puts
+            its advisory recommendation first; local code owns the keys, custom escape, stable
+            <code>conflict_fingerprint</code>, request ID, and exact conversational question. That structural
+            detector is fail-closed, not proof that the choices are semantically complete or good.
+            Opposite-polarity inference requires two shared normalized meaningful terms relevant
+            to the subjects: “deploy to staging” plus “never deploy without tests” is compatible,
+            while “deploy automatically” versus “never deploy automatically” qualifies. Direct
+            “cannot both” or “either/or” source language remains an incompatibility path.
+            The rendered shape is: “I’m trying to resolve {subject_a} and {subject_b}. Would you
+            prefer {A} (recommended), {B}, {C}, or something else?”
+          </p>
+          <p>
+            Model-authored subjects, labels, consequences, rationales, and recommendation
+            rationales must be single-line; CR/LF is rejected. Human CLI output prefaces the
+            request as model-authored, untrusted, and advisory and says to relay it as a question,
+            not execute it. JSON and hashes retain exact response text; Markdown HTML-escapes and
+            then backslash-escapes structural metacharacters in untrusted inline model/custom text
+            without backslash-modifying indented target diffs.
+            <code>meditate decisions RUN_ID</code> presents a pending archived question and
+            config-preserving argv/commands; once settled, it returns the successor and bound
+            decision without response commands. <code>meditate decide</code> transmits the frozen
+            parent context and exact selected/custom response to Anthropic, whose response
+            becomes a fresh read-only successor plan. It records operator-asserted user authority,
+            ignores history appended by the conversation, and rechecks config, target
+            bytes/modes, imports, prompt/parser, and requested/resolved model contract. The process
+            cannot prove an invoking agent faithfully relayed the user's real answer; identity is
+            not authenticated or attested. A scoped choice cannot bypass protected or higher-scope
+            authority, repeat fingerprints are rejected, depth stops at three, and semantic
+            verification remains <code>not_run</code>. Purging a successor removes its archive and
+            exact run reports but keeps a hash/ID-only resolution marker, so its parent cannot
+            resurrect the question; JSONL retains no raw question, options, or custom response.
           </p>
         </div>
       </div>
@@ -343,8 +442,9 @@
           <p class="eyebrow">Get started</p>
           <h2>Inspect first. Apply only after reading the report.</h2>
           <p class="start-copy">
-            Meditate is currently an alpha source distribution. Clone the repository, install it in an isolated
-            environment, and initialize a commented local configuration.
+            The canonical v0.1.0 public artifact is the versioned wheel attached to its GitHub
+            Release. PyPI publication is not claimed, and CI does not publish. Contributors can
+            still clone the repository for an editable install.
           </p>
         </div>
         <div class="code-panel">
@@ -352,10 +452,8 @@
             <span>shell</span>
             <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
           </div>
-          <pre id="install-code"><code>git clone https://github.com/jmcentire/meditate.git
-cd meditate
-python3 -m venv .venv
-.venv/bin/pip install -e .
+          <pre id="install-code"><code>python3 -m venv .venv
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.1.0/meditate_agent-0.1.0-py3-none-any.whl
 .venv/bin/meditate init
 .venv/bin/meditate inspect</code></pre>
         </div>
@@ -375,6 +473,8 @@ python3 -m venv .venv
               <tr><td><code>meditate init</code></td><td>Write a commented TOML configuration.</td><td>Config only</td></tr>
               <tr><td><code>meditate inspect</code></td><td>Inventory targets and evidence locally. No model call.</td><td>None</td></tr>
               <tr><td><code>meditate plan</code></td><td>Create and validate a bounded proposal and report.</td><td>Archives only</td></tr>
+              <tr><td><code>meditate decisions</code></td><td>Show one exact pending a/b/c/custom authority question and response argv.</td><td>None</td></tr>
+              <tr><td><code>meditate decide</code></td><td>Transmit the exact asserted response and frozen context to Anthropic for a successor plan.</td><td>Archives only</td></tr>
               <tr><td><code>meditate apply</code></td><td>Apply one archived plan with exact hash approval.</td><td>Allowlisted targets</td></tr>
               <tr><td><code>meditate restore</code></td><td>Restore archived pre-images after drift checks.</td><td>Archived targets</td></tr>
               <tr><td><code>meditate run</code></td><td>Inspect and plan for cron; unattended mutation is semantically gated off.</td><td>None</td></tr>
@@ -386,6 +486,7 @@ python3 -m venv .venv
         <div class="reference-links">
           <a href="https://github.com/jmcentire/meditate/blob/main/README.md">Full usage guide <span aria-hidden="true">↗</span></a>
           <a href="https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md">Design and authority contracts <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.1.0 changelog <span aria-hidden="true">↗</span></a>
           <a href="llms.txt">Agent-readable index <span aria-hidden="true">→</span></a>
         </div>
       </div>
@@ -397,7 +498,7 @@ python3 -m venv .venv
         <h2>Your instruction file should be maintained like code—not accumulated like a chat log.</h2>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/jmcentire/meditate">Explore the repository</a>
-          <a class="button button-secondary" href="#start">Install from source</a>
+          <a class="button button-secondary" href="#start">Install v0.1.0</a>
         </div>
       </div>
     </section>

@@ -96,7 +96,18 @@ def test_pages_root_and_agent_discovery_contract() -> None:
 
 def test_documented_commands_match_cli_surface() -> None:
     index = (DOCS / "index.html").read_text(encoding="utf-8")
-    for command in ("init", "inspect", "plan", "run", "apply", "restore", "purge", "cron"):
+    for command in (
+        "init",
+        "inspect",
+        "plan",
+        "run",
+        "apply",
+        "restore",
+        "purge",
+        "cron",
+        "decisions",
+        "decide",
+    ):
         assert f"meditate {command}" in index
 
 
@@ -208,11 +219,189 @@ def test_public_docs_disclose_claude_import_filesystem_threat_boundary() -> None
         ),
         combined,
     )
+
+
+def test_public_docs_explain_operator_choice_ux_and_honest_authority_boundaries() -> None:
+    index = _visible_text(DOCS / "index.html")
+    llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
+    combined = index + "\n" + llms_full
+
+    assert "meditate decisions" in combined
+    assert "meditate decide" in combined
+    assert re.search(r"--choice\s+(?:a\|b\|c|a,?\s*b,?\s*(?:or|and)\s*c)", combined)
+    assert "--custom" in combined
+    assert re.search(
+        (
+            r"i(?:’|')m trying to resolve .+ and .+\. would you prefer .+"
+            r"\(recommended\), .+, .+, or something else\?"
+        ),
+        combined,
+    )
+    assert "recommend" in combined
+    assert re.search(
+        r"recommend(?:ation|ed)?.{0,120}(?:advisory|does not (?:answer|choose|select))",
+        combined,
+    )
+    assert "successor plan" in combined
+    assert re.search(r"operator[- ]asserted.{0,100}(?:user\s+)?authority", combined)
+    assert re.search(
+        r"(?:not|no).{0,80}(?:authenticated|attested).{0,40}identity|"
+        r"identity.{0,80}(?:not\s+(?:authenticated|attested)|"
+        r"un(?:authenticated|attested))",
+        combined,
+    )
+    assert "relay" in combined
+    assert "structural validation is not behavioral qualification" in combined
     assert re.search(
         (
             r"same[- ]user\s+filesystem\s+compromise"
             r".{0,100}outside.{0,60}threat\s+(?:model|boundary)"
         ),
+        combined,
+    )
+
+
+def test_privacy_surfaces_disclose_decision_relay_storage_and_purge_boundaries() -> None:
+    surfaces = {
+        "PRIVACY.md": " ".join((ROOT / "PRIVACY.md").read_text(encoding="utf-8").lower().split()),
+        "docs/privacy.html": _visible_text(DOCS / "privacy.html"),
+    }
+
+    for surface, text in surfaces.items():
+        assert "anthropic" in text, f"{surface}: missing decision-response recipient"
+        assert re.search(r"(?:send|sent|transmit|relay).{0,180}anthropic", text), (
+            f"{surface}: missing response transmission disclosure"
+        )
+        assert re.search(
+            (
+                r"exact.{0,100}(?:chosen|choice|selected|custom).{0,100}response|"
+                r"(?:chosen|choice|selected|custom).{0,100}response.{0,100}exact"
+            ),
+            text,
+        ), f"{surface}: missing exact chosen/custom response disclosure"
+        assert re.search(r"frozen.{0,100}parent.{0,100}context", text), (
+            f"{surface}: missing frozen-parent-context disclosure"
+        )
+
+        assert re.search(
+            r"private.{0,60}local.{0,100}(?:xdg|director|storage)|"
+            r"local.{0,60}private.{0,100}(?:xdg|director|storage)",
+            text,
+        ), f"{surface}: missing private local storage-directory disclosure"
+        artifact_markers = {
+            "plan": ("decision plan", "plan.json"),
+            "manifest": ("manifest", "manifest.json"),
+            "evidence": ("evidence", "evidence.json"),
+            "report": ("report", "report.json", "report markdown"),
+        }
+        for artifact, markers in artifact_markers.items():
+            assert any(marker in text for marker in markers), (
+                f"{surface}: missing listed {artifact} artifact"
+            )
+        assert re.search(r"(?:accepted|selected).{0,100}response", text), (
+            f"{surface}: missing accepted-response storage disclosure"
+        )
+        assert re.search(r"(?:decision\s+)?request", text), (
+            f"{surface}: missing request storage disclosure"
+        )
+        assert "jsonl" in text
+        assert re.search(
+            (
+                r"jsonl.{0,180}(?:no|not|without|never).{0,80}"
+                r"(?:raw\s+)?(?:question|option|custom\s+response)|"
+                r"(?:no|not|without|never).{0,80}(?:raw\s+)?"
+                r"(?:question|option|custom\s+response).{0,180}jsonl"
+            ),
+            text,
+        ), f"{surface}: missing hash-only decision JSONL disclosure"
+
+        assert re.search(
+            r"(?:reject|block|refuse).{0,100}(?:recognized\s+)?high[- ]confidence.{0,60}secret",
+            text,
+        ), f"{surface}: missing recognized-secret rejection boundary"
+        assert re.search(
+            r"(?:does not|do not|no).{0,80}(?:promise|guarantee).{0,40}anonym|"
+            r"not.{0,40}anonym(?:ous|ity)|not an anonymity",
+            text,
+        ), f"{surface}: missing no-anonymity-promise boundary"
+
+        assert "successor" in text and "purg" in text
+        assert re.search(
+            r"purg.{0,160}(?:report|json|markdown).{0,100}(?:remove|delete)|"
+            r"(?:report|json|markdown).{0,160}(?:remove|delete).{0,100}purg",
+            text,
+        ), f"{surface}: missing successor-report purge disclosure"
+        assert "replay" in text and ("tombstone" in text or "marker" in text)
+        assert re.search(
+            r"(?:only|solely).{0,100}hash(?:es)?.{0,80}(?:id|identifier)|"
+            r"(?:only|solely).{0,100}(?:id|identifier).{0,80}hash",
+            text,
+        ), f"{surface}: missing hash/ID-only purge metadata disclosure"
+        assert re.search(
+            r"(?:no|not|without|does not retain).{0,80}(?:raw\s+)?response(?:\s+text)?",
+            text,
+        ), f"{surface}: missing no-raw-response purge disclosure"
+
+
+def test_public_docs_explain_deterministic_summary_and_compression_boundaries() -> None:
+    index = _visible_text(DOCS / "index.html")
+    llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
+    combined = index + "\n" + llms_full
+
+    assert re.search(r"prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?6\b", combined)
+    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?20\b", combined)
+    assert re.search(
+        r"summar(?:y|ies).{0,180}(?:deterministic|locally computed|validated data)|"
+        r"(?:deterministic|locally computed).{0,180}summar(?:y|ies)",
+        combined,
+    )
+    assert re.search(
+        r"(?:model|provider).{0,160}(?:cannot|does not|must not|never)"
+        r".{0,100}(?:author|supply|write).{0,80}summar|"
+        r"summar(?:y|ies).{0,160}(?:not|never).{0,80}(?:model|provider)[- ]authored|"
+        r"(?:model|provider)[- ]authored.{0,80}summar(?:y|ies)"
+        r".{0,100}(?:forbid|reject|not accepted|removed)",
+        combined,
+    )
+    assert re.search(
+        r"(?:8|eight)[- ]word.{0,120}(?:contiguous\s+)?phrase.{0,120}"
+        r"(?:repeat|duplicat)|"
+        r"(?:repeat|duplicat).{0,120}(?:8|eight)[- ]word.{0,120}phrase|"
+        r"(?:8|eight)(?:\s+or\s+more)?\s+words?.{0,120}(?:contiguous|repeat|duplicat)|"
+        r"(?:contiguous|repeat|duplicat).{0,120}(?:8|eight)(?:\s+or\s+more)?\s+words?",
+        combined,
+    )
+    for catchall in (
+        "other applicable actions",
+        "additional applicable actions",
+        "and similar",
+        "etc",
+        "and so on",
+    ):
+        assert catchall in combined
+    assert re.search(
+        r"(?:catch[- ]all|exact phrase).{0,180}(?:source|cited evidence)|"
+        r"(?:source|cited evidence).{0,180}(?:catch[- ]all|exact phrase)",
+        combined,
+    )
+
+    assert "compression_regression" in combined
+    assert re.search(
+        r"(?:aggregate|total|configured[- ]target).{0,100}byte.{0,100}"
+        r"(?:grow|increase|positive)",
+        combined,
+    )
+    assert re.search(
+        r"compression_regression.{0,180}(?:no apply command|cannot be applied|apply.{0,40}reject)|"
+        r"(?:no apply command|cannot be applied|apply.{0,40}reject)"
+        r".{0,180}compression_regression",
+        combined,
+    )
+    assert re.search(
+        r"(?:one|single|individual).{0,80}directive.{0,100}(?:may|can).{0,40}(?:grow|longer)"
+        r".{0,180}aggregate.{0,100}(?:decrease|shrink)|"
+        r"aggregate.{0,100}(?:decrease|shrink).{0,180}"
+        r"(?:one|single|individual).{0,80}directive.{0,100}(?:may|can).{0,40}(?:grow|longer)",
         combined,
     )
 

@@ -90,8 +90,8 @@ def replace_matching(
             "schema_version": 1,
             "keep": keep,
             "changes": changes,
+            "decision_request": None,
             "unresolved_conflicts": [],
-            "summary": "Replaced obsolete fixture directives.",
         }
 
     return build
@@ -104,6 +104,6 @@ def keep_all(packet: dict[str, Any]) -> dict[str, Any]:
             directive["id"] for target in packet["targets"] for directive in target["directives"]
         ],
         "changes": [],
+        "decision_request": None,
         "unresolved_conflicts": [],
-        "summary": "No evidence-backed changes.",
     }

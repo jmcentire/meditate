@@ -244,3 +244,8 @@ class ValidatedPlan:
     metrics: dict[str, Any] = field(default_factory=dict)
     import_graph_before: dict[str, Any] = field(default_factory=dict)
     import_graph_after: dict[str, Any] = field(default_factory=dict)
+    decision_request: dict[str, Any] | None = None
+    operator_decision: dict[str, Any] | None = None
+    parent_plan_sha256: str = ""
+    parent_packet_sha256: str = ""
+    decision_lineage: dict[str, Any] = field(default_factory=dict)

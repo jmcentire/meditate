@@ -164,6 +164,12 @@ Meditate never invents a glob. Codex target interpretation follows the official
   no model call.
 - `meditate plan`: build a sanitized evidence packet, call the selected model,
   validate structured output, and write a proposal/report. It changes no target.
+- `meditate decisions RUN_ID`: verify an immutable archive and render its one
+  pending `a`/`b`/`c`/custom authority question plus shell-quoted response forms
+  and argv arrays that retain the selected config path.
+- `meditate decide RUN_ID REQUEST_ID (--choice a|b|c | --custom TEXT)`: record
+  operator-asserted user authority and create a fresh read-only successor plan.
+  With neither flag it prompts only on a TTY; it never edits the parent or a target.
 - `meditate apply RUN_ID`: revalidate source hashes, archive every target plus a
   manifest, atomically replace targets, and emit an apply receipt.
 - `meditate run`: inspect + plan. Cron uses this surface. An explicit `--apply`
@@ -178,7 +184,9 @@ redaction blocks the evidence packet before the first model call; model output i
 scanned again before it is persisted. Model failure, parse failure, surviving
 secret detection, missing evidence references, source drift, concurrent
 execution, or a non-recoverable archive all fail closed and cannot produce a
-rewrite.
+rewrite. After every provider call, configured targets are reloaded and their
+logical path/order, byte hash, existence bit, and mode must still match the
+inspection; this prevents a stale proposal, not only a later stale apply.
 
 ## Model and budget contract
 
@@ -237,6 +245,12 @@ and heading. Meditate renders complete proposals deterministically. This makes
 byte-identical unchanged directives and no-op convergence construction
 properties rather than hopes about model formatting.
 
+Every change, including remove and escalate, must copy its `destination_target`
+byte-for-byte from `allowed_targets`. The string is opaque: the model may not
+expand `~`, normalize, absolutize, or invent a spelling. Replace, remove, and
+escalate copy the source directive's target; relocate chooses another exact
+configured target. Local allowlist validation still fails closed.
+
 The model returns JSON with:
 
 - kept directive IDs;
@@ -244,7 +258,99 @@ The model returns JSON with:
   allowlisted destination, heading, replacement text, reason, and evidence;
 - exact evidence IDs and matching sanitized quotes for every change;
 - unresolved conflicts that block apply;
+- `decision_request: null` or one bounded unresolved authority collision;
 - a concise human report.
+
+### Bounded authority-decision contract
+
+A decision request is not a general ambiguity escape hatch. It is valid only
+when at least two preserved directives support interpretations that are mutually
+exclusive, materially change behavior, and authority plus temporal evidence
+cannot decide precedence. A conservative local detector requires shared
+subject/action grounding plus opposed polarity, or an explicit incompatible
+alternative in the cited source material. Compatible instructions such as a
+concise report and a diagnostics appendix are not a decision: current prose is
+kept and the ambiguity remains unresolved. This structural detector is
+deliberately fail-closed; it does not prove semantic incompatibility.
+
+The competing cited evidence records must also have equal authority, equal
+scope, and the same timestamp. If authority or scope differs, or one record is
+newer, the normal precedence model already has an answer and the model may not
+manufacture a user question to override it. Older evidence remains lineage; it
+does not become an equal choice. Model-authored subjects are used only for
+topical grounding; all polarity/incompatibility proof comes from the cited
+source records.
+Opposite-polarity inference requires at least two shared normalized meaningful
+terms in the competing records that are relevant to the subjects. “Deploy to
+staging” and “never deploy without tests” therefore remain compatible, while
+“deploy automatically” and “never deploy automatically” qualify. Explicit
+“cannot both” or “either/or” source language remains a direct path.
+
+The raw model schema supplies `subject_a`, `subject_b`, affected directive and
+evidence IDs, and exactly three ordered options. Each option contains a label,
+consequence, rationale, and evidence IDs. Position zero is the model's advisory
+recommendation and carries a recommendation rationale. The model cannot emit an
+answer, selection, status, key, ID, fingerprint, rendered question, custom
+choice, or recommended flag/index. All affected directives must be in `keep`, so
+the blocked parent preserves their bytes.
+Subjects, labels, consequences, rationales, and recommendation rationale are
+single-line display fields; local validation rejects CR or LF. The provider-facing
+schema is a stable, packet-independent Anthropic structural subset: it contains
+no private target/directive/evidence enums or array/text bounds. Local validation
+enforces exact target and known-ID membership, at least two directive/evidence
+IDs, and exactly three options.
+
+Local code assigns `a`, `b`, and `c`, marks only `a` recommended, adds the custom
+escape, mints a request ID, and mints `conflict_fingerprint` only from stable
+sorted directive/evidence IDs—not model prose. Only option `a` contains
+`recommended: true`; options `b` and `c` omit the field. It renders exactly: “I’m
+trying to resolve {subject_a} and {subject_b}. Would you prefer {A} (recommended),
+{B}, {C}, or something else?” The recommendation is model-authored, advisory,
+structurally grounded, and not semantically verified or selected by default.
+Human CLI output first says the model-authored framing and recommendation are
+untrusted and advisory and must be relayed as a question, not executed. JSON and
+hashes preserve exact response text. Markdown HTML-escapes and then backslash-
+escapes structural metacharacters in untrusted inline model/custom text; indented
+target diffs use a separate path and are not backslash-modified.
+
+`decision_required` blocks apply, is returned before generic `plan_blocked`, and
+suppresses an apply command. The same structured request appears in plan/manifest,
+JSON/Markdown report, plan/run JSON, and the `decisions` command. JSONL stores only
+decision IDs, choice key, hashes,
+and lineage depth. `decide` accepts an exact archived option or up to 2,000
+characters of custom text; custom leading/trailing whitespace is preserved,
+while empty, NUL-bearing, oversized, or recognized-secret text is rejected.
+There is no manual review file to edit.
+
+While pending, `meditate decisions` returns config-preserving argv arrays and
+shell-quoted forms. Once a verified child exists, it returns `status=resolved`,
+the successor run, and bound operator decision with no response forms. Operator
+records use `response_kind=choice|custom`, `choice_key=a|b|c|null`, and define
+`response_sha256` as SHA-256 of exact `response_text` UTF-8 bytes.
+
+The successor freezes and replays the parent's already-sanitized evidence packet
+and ignores history appended by asking and answering the question. `decide`
+transmits the frozen parent context and exact selected/custom response to Anthropic,
+whose response becomes the read-only successor plan. Before its provider call,
+it re-reads only configured targets and Claude imports and requires
+exact config, target path/order/hash/existence/mode, import graph,
+prompt/parser/provider/requested-model contract. The API-returned resolved model
+ID must also remain exact. The response, parent plan and packet hashes, and prior
+request/fingerprint lineage are bound into the successor plan and manifest.
+Re-asking the same locally grounded `conflict_fingerprint` fails, and at most three operator
+choices may occur in a chain.
+
+`decide`, apply, restore, and purge share the same mutation lock. Purging a
+decision successor deletes its archive and exact run-ID reports, while a minimal
+parent/request/successor/response hash marker survives in the tombstone and
+summary log. The parent therefore remains resolved without retaining raw response
+text. JSONL decision events are summary-only.
+
+This record is operator-asserted user authority: identity is not authenticated or
+attested, and the process cannot prove an invoking agent relayed the user's real answer. The choice
+is scoped to its collision and cannot bypass protected directives, deterministic
+safety, or higher-scope loaded authority. Structural validation and the choice
+do not change `semantic_verification.status = not_run`.
 
 `escalate` is report-only. It applies to one current directive, keeps its source
 prose byte-for-byte at the same target and heading, names `hook` or `settings` as
@@ -273,6 +379,64 @@ near-zero proposal rather than rephrasing everything.
 Configured protected headings or marker-delimited blocks are copied through
 byte-identically and are excluded from model mutation. They remain present in
 the evidence packet so the proposed surrounding rules cannot contradict them.
+
+## Workflow order and stage-local verification
+
+Evidence that names several operational actions establishes coverage, never a
+universal order. A high-impact replacement must bind itself to the exact order in
+the loaded repository instructions and documented workflow. Before each action,
+it may require only checks that are applicable, project-required, and available
+before that action. Push-, PR-, and merge-triggered CI, approvals, and named-actor
+handoffs are each evaluated at their own downstream stage, where they exist. Requiring all CI
+before commit is invalid because some required CI cannot exist until after push,
+PR creation, or merge. The validator rejects that form in every replacement or
+relocation, not only when a rewrite newly introduces a high-impact action.
+
+The restored-baseline evaluation run `20260818T231558Z-6e8e4703` is regression
+evidence for this rule. It was rejected and never applied because its replacement
+required all project tests and CI before commit and treated `commit`, `merge`, and
+`push` as a universal sequence. Release review caught the bad form even though the
+prior validator admitted it; the run is now a regression fixture the new
+deterministic gate must reject. It does not qualify a successor directive
+semantically; `semantic_verification.status` remains `not_run` pending an
+owner-authored behavioral suite.
+
+## Deterministic consolidation quality
+
+Live prompt-v5 qualification run `20260819T013715Z-67de2a2b` was rejected and
+never applied. Its proposal increased aggregate target size by 898 bytes,
+repeated a workflow-order clause, added “other applicable actions,” and supplied
+a model summary of 62 remaining directives while the renderer validated 64.
+These facts are structural proposal evidence, not behavioral qualification.
+
+Prompt v6 removes `summary` from the provider output schema, and parser v20
+rejects that stale model-owned field. Meditate derives the report summary from
+validated disposition/action counts, unresolved conflicts, and aggregate
+pre/post directive and byte metrics. A replacement fails with
+`repeated_replacement_phrase` when any normalized contiguous eight-word window
+occurs twice. It fails with `unsupported_action_catch_all` when it newly adds
+“other/additional applicable actions,” “and similar,” “etc,” or “and so on”
+without that exact catch-all in a source directive or exact cited evidence.
+
+Compression is enforced across all configured writable targets, not per
+directive. When aggregate `post_bytes > pre_bytes`, Meditate archives the plan
+and reports `compression_regression`, but emits no apply command and rejects
+apply. A compact corrective rewrite may therefore make one directive longer if
+the aggregate configured target set still shrinks.
+
+### Final prompt-v6 live receipts
+
+Claude run `20260819T015515Z-120c6869` covered 65 pre-image directives: 64 keep/1
+replace. Its proposal was +720 aggregate bytes, so it was archived
+with `compression_regression`, exposed no apply command, and left the target SHA
+unchanged at `441fe6e9...`. Codex run `20260819T015632Z-a4fde49b` kept 33/33
+directives, with zero changes/conflicts/delta; configured-target coverage was
+4,276/32,768 bytes. It exposed no apply command and left the
+target SHA unchanged at `0dd415bb...`.
+
+Both receipts bind prompt v6 SHA `61f949...`, parser `meditate-parser-v20`, model
+`claude-sonnet-4-6`, and `semantic_verification=not_run`. They qualify safe
+no-op and fail-closed blocking mechanics only, not behavioral equivalence.
 
 ## Structural and semantic gates
 
@@ -362,6 +526,19 @@ Reports call these overlap candidates, not proven semantic conflicts. Offline
 token estimates use a documented conservative bytes heuristic and are labeled
 with the estimator version; the provider enforces configured limits again at the
 call boundary.
+
+## Release and distribution
+
+Package metadata and the runtime version are synchronized at `0.1.0`. The
+canonical public distribution surface is the versioned wheel attached to the
+`v0.1.0` GitHub Release:
+
+`https://github.com/jmcentire/meditate/releases/download/v0.1.0/meditate_agent-0.1.0-py3-none-any.whl`
+
+The repository CI checks Ruff, strict mypy, pytest across supported Python
+versions, and an isolated wheel build. It does not publish. PyPI publication is
+not claimed; no PyPI project, credential, or workflow is configured.
+Contributors retain the local editable-install path.
 
 ## Why not a linter?
 

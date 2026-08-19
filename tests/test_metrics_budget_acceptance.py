@@ -15,6 +15,7 @@ from meditate.plan import SYSTEM_PROMPT, create_plan
 from meditate.provider import AnthropicProvider
 from meditate.report import write_plan_report
 from meditate.segment import segment_markdown
+from meditate.transaction import apply_run
 from meditate.util import MeditateError, sha256_bytes
 
 _METRIC_ALIASES = {
@@ -196,6 +197,144 @@ def test_target_and_aggregate_metrics_flow_through_plan_manifest_report_and_log(
     )
 
 
+def test_aggregate_byte_growth_archives_blocked_compression_regression(
+    config_factory: ConfigFactory,
+) -> None:
+    original = "# Reports\n\n- Keep reports concise.\n"
+    replacement = "- Keep reports concise and include useful diagnostic context."
+    evidence_text = "New rule: keep reports concise and include useful diagnostic context."
+    evidence = replace(
+        _event(),
+        id="evt_compression_growth",
+        text=evidence_text,
+        session_id="compression-growth-session",
+        source_locator="fixture:compression-growth",
+        content_sha256=sha256_bytes(evidence_text.encode("utf-8")),
+    )
+    config, (target,) = config_factory((original,), target_names=("CLAUDE.md",))
+    config = replace(
+        config,
+        safety=replace(config.safety, size_ceiling_ratio=5.0),
+    )
+    provider = StubProvider(replace_matching({"Keep reports concise": replacement}))
+    provider.name = config.llm.provider
+    provider.model = config.llm.model
+    plan = create_plan(config, provider=provider, inspection=inspection(config, (evidence,)))
+
+    assert "compression_regression" in plan.blocked_reasons
+    run_dir = config.data_root / "runs" / plan.run_id
+    plan_json = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "compression_regression" in plan_json["blocked_reasons"]
+    assert "compression_regression" in manifest["blocked_reasons"]
+    assert sum(_metric_value(record, "byte_delta") for record in manifest["targets"]) > 0
+
+    report_json_path, report_markdown_path = write_plan_report(config, plan)
+    report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    for surface in (plan_json, manifest, report_json):
+        assert not any(
+            item.get("apply_command") for item in _dicts(surface) if "apply_command" in item
+        )
+    assert "meditate apply" not in report_markdown_path.read_text(encoding="utf-8").lower()
+
+    with pytest.raises(MeditateError) as caught:
+        apply_run(
+            config,
+            plan.run_id,
+            mode="attended",
+            approval_sha256=plan.plan_sha256,
+        )
+    assert caught.value.code == "compression_regression"
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_one_directive_may_grow_when_aggregate_configured_bytes_decrease(
+    config_factory: ConfigFactory,
+) -> None:
+    originals = (
+        "# Logs\n\n- Keep logs.\n",
+        (
+            "# Reports\n\n"
+            "- Always include verbose step-by-step diagnostic details and repeated context in "
+            "every routine report.\n"
+        ),
+    )
+    replacements = (
+        "- Keep logs and retain useful diagnostic context.",
+        "- Keep routine reports concise.",
+    )
+    evidence_texts = (
+        "New rule: keep logs and retain useful diagnostic context.",
+        "New rule: keep routine reports concise.",
+    )
+    events = tuple(
+        replace(
+            _event(),
+            id=f"evt_aggregate_{index}",
+            text=text,
+            session_id=f"aggregate-session-{index}",
+            source_locator=f"fixture:aggregate:{index}",
+            content_sha256=sha256_bytes(text.encode("utf-8")),
+        )
+        for index, text in enumerate(evidence_texts)
+    )
+    config, _targets = config_factory(
+        originals,
+        target_names=("CLAUDE.md", "CLAUDE.local.md"),
+    )
+    config = replace(
+        config,
+        safety=replace(
+            config.safety,
+            size_floor_ratio=0.1,
+            size_ceiling_ratio=5.0,
+        ),
+    )
+
+    def builder(packet: dict[str, Any]) -> dict[str, Any]:
+        evidence_by_id = {
+            event["id"]: event for event in packet["evidence_events_oldest_to_newest"]
+        }
+        changes = []
+        for index, target in enumerate(packet["targets"]):
+            source = target["directives"][0]
+            event = evidence_by_id[f"evt_aggregate_{index}"]
+            changes.append(
+                {
+                    "action": "replace",
+                    "source_ids": [source["id"]],
+                    "replacement": replacements[index],
+                    "destination_target": target["target"],
+                    "heading_path": source["heading_path"],
+                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "reason": "The cited rule replaces the prior reporting preference.",
+                    "minimum_apply_mode": "attended",
+                    "relocation_basis": "",
+                    "enforcement_target": "",
+                    "deterministic_check": "",
+                }
+            )
+        return {
+            "schema_version": 1,
+            "keep": [],
+            "changes": changes,
+            "decision_request": None,
+            "unresolved_conflicts": [],
+        }
+
+    provider = StubProvider(builder)
+    provider.name = config.llm.provider
+    provider.model = config.llm.model
+    plan = create_plan(config, provider=provider, inspection=inspection(config, events))
+    run_dir = config.data_root / "runs" / plan.run_id
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    byte_deltas = [_metric_value(record, "byte_delta") for record in manifest["targets"]]
+    assert any(delta > 0 for delta in byte_deltas)
+    assert sum(byte_deltas) < 0
+    assert "compression_regression" not in plan.blocked_reasons
+    assert plan.changed_directive_count == 2
+
+
 def _minimal_config_text(target: Path, root: Path) -> str:
     quote = json.dumps
     return f"""schema_version = 1
@@ -359,6 +498,15 @@ def _codex_config(
             encoding="utf-8",
         )
     config = replace(config, sources=replace(config.sources, agents=("codex",)))
+    if override == 40_000:
+        config = replace(
+            config,
+            llm=replace(
+                config.llm,
+                max_input_tokens=200_000,
+                max_total_input_tokens=200_000,
+            ),
+        )
     return config
 
 
