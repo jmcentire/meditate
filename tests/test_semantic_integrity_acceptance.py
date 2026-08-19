@@ -14,7 +14,13 @@ import meditate.plan as plan_module
 import meditate.transaction as transaction
 from meditate.cli import main
 from meditate.models import Authority, EvidenceEvent, RunUsage
-from meditate.plan import PLAN_SCHEMA, SYSTEM_PROMPT, _packet, create_plan
+from meditate.plan import (
+    PLAN_PROMPT_VERSION,
+    PLAN_SCHEMA,
+    SYSTEM_PROMPT,
+    _packet,
+    create_plan,
+)
 from meditate.provider import AnthropicProvider
 from meditate.report import write_plan_report
 from meditate.transaction import apply_run
@@ -73,15 +79,15 @@ def _correction() -> EvidenceEvent:
 
 
 def _replacement_plan(config_factory: ConfigFactory):
-    original = "# Git\n\n- Commit only when asked.\n\n- Preserve unrelated edits.\n"
+    obsolete = (
+        "Commit only when asked, even when completed work has passed all project-required "
+        "checks and is ready."
+    )
+    original = f"# Git\n\n- {obsolete}\n\n- Preserve unrelated edits.\n"
     config, (target,) = config_factory((original,), target_names=("CLAUDE.md",))
     provider = StubProvider(
         replace_matching(
-            {
-                "Commit only when asked": (
-                    "- Commit completed work after project-required checks pass."
-                )
-            }
+            {obsolete: ("- Commit completed work after project-required checks pass.")}
         )
     )
     plan = create_plan(
@@ -120,7 +126,7 @@ def test_plan_manifest_reports_and_plan_hash_bind_prompt_provenance(
         "schema_version": plan_json["schema_version"],
         "model": "stub-model-v1",
         "model_id": "stub-model-v1",
-        "prompt_version": "1",
+        "prompt_version": PLAN_PROMPT_VERSION,
         "prompt_sha256": sha256_bytes(SYSTEM_PROMPT.encode("utf-8")),
         "semantic_verification": SEMANTIC_VERIFICATION,
     }
@@ -330,7 +336,7 @@ def test_cli_plan_json_exposes_prompt_and_semantic_verification(
     expected = {
         "schema_version": 1,
         "model_id": "claude-sonnet-4-6",
-        "prompt_version": "1",
+        "prompt_version": PLAN_PROMPT_VERSION,
         "prompt_sha256": sha256_bytes(SYSTEM_PROMPT.encode("utf-8")),
         "semantic_verification": SEMANTIC_VERIFICATION,
     }
@@ -384,8 +390,8 @@ def _escalation_builder(
                 if directive["id"] not in change["source_ids"]
             ],
             "changes": [change],
+            "decision_request": None,
             "unresolved_conflicts": [],
-            "summary": "Escalated one repeated enforcement candidate.",
         }
 
     return build
@@ -621,8 +627,8 @@ def _contextual_relocation_builder(
                     "deterministic_check": "",
                 }
             ],
+            "decision_request": None,
             "unresolved_conflicts": [],
-            "summary": "Relocated one directive to an existing scoped rule target.",
         }
 
     return build
@@ -691,8 +697,9 @@ def test_contextual_relocation_cannot_invent_an_unconfigured_target(
             inspection=inspection(config, (_relocation_evidence(),)),
         )
     assert not invented.exists()
+    assert not (config.data_root / "runs").exists()
     assert provider.last_schema is not None
     destination_schema = provider.last_schema["properties"]["changes"]["items"]["properties"][
         "destination_target"
     ]
-    assert str(invented) not in destination_schema["enum"]
+    assert "enum" not in destination_schema

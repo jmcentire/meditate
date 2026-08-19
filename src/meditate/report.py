@@ -7,6 +7,8 @@ import fcntl
 import html
 import json
 import os
+import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ from .util import (
     atomic_write,
     atomic_write_json,
     ensure_private_dir,
+    exclusive_lock,
     fail,
     new_run_id,
 )
@@ -28,12 +31,24 @@ def _reports_root(config: Config) -> Path:
     return ensure_private_dir(config.state_root / "reports")
 
 
-def _safe_markdown(value: str) -> str:
+_MARKDOWN_METACHARACTER = re.compile(r"([\\`*_[\]{}()#+!|>~])")
+
+
+def _plain_text(value: str) -> str:
     return html.escape(value, quote=False).replace("\x00", "�")
 
 
+def _safe_markdown(value: str) -> str:
+    single_display_line = _plain_text(value).replace("\r", r"\r").replace("\n", r"\n")
+    return _MARKDOWN_METACHARACTER.sub(r"\\\1", single_display_line)
+
+
+def _safe_code(value: str) -> str:
+    return _plain_text(value)
+
+
 def _indented(value: str) -> str:
-    return "\n".join(f"    {line}" for line in _safe_markdown(value).splitlines())
+    return "\n".join(f"    {line}" for line in _safe_code(value).splitlines())
 
 
 def append_log(config: Config, event: dict[str, Any]) -> None:
@@ -48,6 +63,29 @@ def append_log(config: Config, event: dict[str, Any]) -> None:
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+
+
+def decision_log_summary(
+    decision_request: dict[str, Any] | None,
+    operator_decision: dict[str, Any] | None,
+    decision_lineage: dict[str, Any],
+) -> dict[str, Any]:
+    """Return decision provenance safe for the append-only summary log."""
+
+    request = decision_request if isinstance(decision_request, dict) else {}
+    operator = operator_decision if isinstance(operator_decision, dict) else {}
+    depth = decision_lineage.get("depth") if isinstance(decision_lineage, dict) else None
+    return {
+        "decision_request_id": request.get("request_id"),
+        "decision_conflict_fingerprint": request.get("conflict_fingerprint"),
+        "operator_parent_run_id": operator.get("parent_run_id"),
+        "operator_request_id": operator.get("request_id"),
+        "operator_conflict_fingerprint": operator.get("conflict_fingerprint"),
+        "operator_response_kind": operator.get("response_kind"),
+        "operator_choice_key": operator.get("choice_key"),
+        "operator_response_sha256": operator.get("response_sha256"),
+        "decision_lineage_depth": depth,
+    }
 
 
 def write_inspection_report(config: Config, result: InspectionResult) -> tuple[str, Path, Path]:
@@ -95,12 +133,28 @@ raw interaction text. Run `meditate plan` to create an evidence-backed proposal.
     return report_id, json_path, md_path
 
 
-def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
+def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
     root = _reports_root(config)
     json_path = root / f"{plan.run_id}.json"
     md_path = root / f"{plan.run_id}.md"
     run_dir = config.data_root / "runs" / plan.run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    decision_response_argv: dict[str, list[str]] = {}
+    if plan.decision_request:
+        response_base = [
+            "meditate",
+            "decide",
+            "--config",
+            str(config.config_path),
+            plan.run_id,
+            str(plan.decision_request["request_id"]),
+        ]
+        decision_response_argv = {
+            "a": [*response_base, "--choice", "a"],
+            "b": [*response_base, "--choice", "b"],
+            "c": [*response_base, "--choice", "c"],
+            "custom": [*response_base, "--custom", "TEXT"],
+        }
     payload = {
         "schema_version": SCHEMA_VERSION,
         "run_id": plan.run_id,
@@ -111,6 +165,15 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
         "prompt_version": plan.prompt_version,
         "prompt_sha256": plan.prompt_sha256,
         "semantic_verification": plan.semantic_verification,
+        "decision_request": plan.decision_request,
+        "operator_decision": plan.operator_decision,
+        "parent_plan_sha256": plan.parent_plan_sha256,
+        "parent_packet_sha256": plan.parent_packet_sha256,
+        "decision_lineage": plan.decision_lineage,
+        "decision_response_argv": decision_response_argv,
+        "decision_response_commands": {
+            key: shlex.join(argv) for key, argv in decision_response_argv.items()
+        },
         "minimum_apply_mode": plan.minimum_apply_mode,
         "blocked_reasons": list(plan.blocked_reasons),
         "directives": plan.directive_count,
@@ -178,15 +241,18 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
         f"- Line delta: {plan.metrics.get('line_delta', 0):+d}",
         (
             "- Codex instruction budget: "
-            f"status `{_safe_markdown(str(codex_budget.get('status', 'unknown')))}`; "
+            f"status `{_safe_code(str(codex_budget.get('status', 'unknown')))}`; "
             f"post bytes {codex_budget.get('post_bytes', 0)}; "
             f"limit {codex_budget.get('project_doc_max_bytes', 0)}; "
-            f"source `{_safe_markdown(str(codex_budget.get('source', 'unknown')))}`; "
-            f"coverage `{_safe_markdown(str(codex_budget.get('coverage', 'unknown')))}`; "
+            f"source `{_safe_code(str(codex_budget.get('source', 'unknown')))}`; "
+            f"coverage `{_safe_code(str(codex_budget.get('coverage', 'unknown')))}`; "
             f"configured targets {codex_budget.get('configured_target_count', 0)}"
         ),
         f"- Minimum apply mode: `{plan.minimum_apply_mode}`",
         f"- Blocked: {', '.join(plan.blocked_reasons) if plan.blocked_reasons else 'no'}",
+        f"- Parent plan SHA-256: `{plan.parent_plan_sha256 or 'none'}`",
+        f"- Parent packet SHA-256: `{plan.parent_packet_sha256 or 'none'}`",
+        f"- Decision depth: {plan.decision_lineage.get('depth', 0)}",
         (
             f"- Tokens: {plan.usage.actual_input_tokens} input / "
             f"{plan.usage.actual_output_tokens} output"
@@ -199,6 +265,78 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
         "",
         _safe_markdown(str(plan.raw_plan.get("summary", ""))),
     ]
+    if plan.operator_decision:
+        decision = plan.operator_decision
+        collision_scope = decision.get("collision_scope", {})
+        subject_a = (
+            collision_scope.get("subject_a", "") if isinstance(collision_scope, dict) else ""
+        )
+        subject_b = (
+            collision_scope.get("subject_b", "") if isinstance(collision_scope, dict) else ""
+        )
+        sections.extend(
+            [
+                "",
+                "## Operator-asserted decision authority",
+                "",
+                f"- Request: `{_safe_code(str(decision.get('request_id', '')))}`",
+                f"- Collision: {_safe_markdown(str(subject_a))} / {_safe_markdown(str(subject_b))}",
+                f"- Parent run: `{_safe_code(str(decision.get('parent_run_id', '')))}`",
+                f"- Parent plan SHA-256: `{decision.get('parent_plan_sha256', '')}`",
+                f"- Parent packet SHA-256: `{decision.get('parent_packet_sha256', '')}`",
+                f"- Conflict fingerprint: `{decision.get('conflict_fingerprint', '')}`",
+                f"- Response kind: `{_safe_code(str(decision.get('response_kind', '')))}`",
+                f"- Choice key: `{_safe_code(str(decision.get('choice_key', '')))}`",
+                f"- Response: {_safe_markdown(str(decision.get('response_text', '')))}",
+                f"- Response SHA-256: `{decision.get('response_sha256', '')}`",
+                f"- Decision lineage depth: `{plan.decision_lineage.get('depth', 0)}`",
+                "- Authority: operator-asserted user authority; identity is not authenticated "
+                "or attested.",
+                "- Scope: this choice cannot bypass protected directives, deterministic safety, "
+                "or higher-scope loaded authority.",
+            ]
+        )
+    decision_request = plan.decision_request
+    if decision_request:
+        sections.extend(
+            [
+                "",
+                "## Decision required",
+                "",
+                _safe_markdown(str(decision_request["question"])),
+                "",
+                "The recommendation is model-authored and advisory. Its evidence grounding is "
+                "structurally checked, but its framing and recommendation are not semantically "
+                "verified and it is never a default answer.",
+                "",
+                "Recommendation rationale: "
+                + _safe_markdown(decision_request["recommendation_rationale"]),
+                "",
+            ]
+        )
+        for option in decision_request["options"]:
+            marker = " (recommended)" if option.get("recommended") is True else ""
+            sections.extend(
+                [
+                    f"- `{option['key']}` — {_safe_markdown(option['label'])}{marker}",
+                    f"  - Consequence: {_safe_markdown(option['consequence'])}",
+                    f"  - Rationale: {_safe_markdown(option['rationale'])}",
+                    "  - Evidence: " + ", ".join(f"`{item}`" for item in option["evidence_ids"]),
+                ]
+            )
+        sections.extend(
+            [
+                f"- `custom` — {_safe_markdown(decision_request['custom']['label'])}",
+                "",
+                "Deterministic responses:",
+                "",
+                *[f"- `{shlex.join(decision_response_argv[key])}`" for key in ("a", "b", "c")],
+                f"- `{shlex.join(decision_response_argv['custom'])}`",
+                "",
+                "An invoking agent must relay the user's explicit choice. Meditate hashes and "
+                "records that operator assertion; it cannot attest the speaker's identity.",
+            ]
+        )
     conflicts = plan.raw_plan.get("unresolved_conflicts", [])
     if conflicts:
         sections.extend(["", "## Unresolved conflicts", ""])
@@ -218,7 +356,7 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
                 f"## Change {index}: {change['action']}",
                 "",
                 f"- Source IDs: {', '.join(f'`{item}`' for item in change['source_ids'])}",
-                f"- Destination: `{_safe_markdown(change['destination_target'])}`",
+                f"- Destination: `{_safe_code(change['destination_target'])}`",
                 f"- Apply mode: `{change['minimum_apply_mode']}`",
                 f"- Reason: {_safe_markdown(change['reason'])}",
                 f"- Relocation basis: `{change.get('relocation_basis', '')}`",
@@ -279,7 +417,7 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
         if isinstance(claude_guidance, dict):
             sections.append(
                 "- Claude line guidance: "
-                f"status `{_safe_markdown(str(claude_guidance.get('status', 'unknown')))}`; "
+                f"status `{_safe_code(str(claude_guidance.get('status', 'unknown')))}`; "
                 f"post lines {claude_guidance.get('post_lines', 0)}; recommended maximum "
                 f"{claude_guidance.get('recommended_max_lines', 200)} lines. This is guidance, "
                 "not a hard limit."
@@ -306,6 +444,11 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
             "prompt_version": plan.prompt_version,
             "prompt_sha256": plan.prompt_sha256,
             "semantic_verification": plan.semantic_verification,
+            "parent_plan_sha256": plan.parent_plan_sha256,
+            "parent_packet_sha256": plan.parent_packet_sha256,
+            **decision_log_summary(
+                plan.decision_request, plan.operator_decision, plan.decision_lineage
+            ),
             "changed_directives": plan.changed_directive_count,
             "directives": plan.directive_count,
             "pre_directives": plan.directive_count,
@@ -325,3 +468,10 @@ def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
         },
     )
     return json_path, md_path
+
+
+def write_plan_report(config: Config, plan: ValidatedPlan) -> tuple[Path, Path]:
+    """Write a run report without racing explicit archive/report purge."""
+
+    with exclusive_lock(config.state_root / "meditate.lock"):
+        return _write_plan_report_unlocked(config, plan)

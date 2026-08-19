@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import os
 import secrets
 import shutil
@@ -19,6 +20,7 @@ from .plan import PARSER_VERSION, SEMANTIC_VERIFICATION
 from .report import append_log
 from .util import (
     SCHEMA_VERSION,
+    MeditateError,
     atomic_write,
     atomic_write_json,
     canonical_json_bytes,
@@ -60,9 +62,18 @@ def _verified_artifacts(
         path = run_dir / name
         if path.is_symlink() or not path.is_file():
             fail("archive_corrupt", f"Missing or unsafe archive artifact: {name}")
-        value = load_json(path)
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            fail(
+                "archive_corrupt",
+                f"Run {run_id} contains unreadable or invalid {name}: {type(exc).__name__}",
+            )
         if not isinstance(value, dict):
             fail("archive_corrupt", f"Run {run_id} contains invalid {name}")
+        if raw != canonical_json_bytes(value):
+            fail("archive_corrupt", f"Run {run_id} contains non-canonical {name}")
         artifacts.append(value)
     plan, manifest, state = artifacts
     if not all(isinstance(item, dict) for item in (plan, manifest, state)):
@@ -85,6 +96,12 @@ def _verified_artifacts(
         "prompt_version",
         "prompt_sha256",
         "semantic_verification",
+        "decision_request",
+        "operator_decision",
+        "parent_plan_sha256",
+        "parent_packet_sha256",
+        "decision_lineage",
+        "blocked_reasons",
         "metrics",
         "import_graph_before",
         "import_graph_after",
@@ -106,6 +123,89 @@ def _verified_artifacts(
         fail("archive_corrupt", f"Run {run_id} has invalid prompt hash")
     if "semantic_verification" in plan and plan["semantic_verification"] != SEMANTIC_VERIFICATION:
         fail("archive_corrupt", f"Run {run_id} has invalid semantic verification state")
+    blocked_reasons = plan.get("blocked_reasons")
+    if not isinstance(blocked_reasons, list) or not all(
+        isinstance(item, str) and item for item in blocked_reasons
+    ):
+        fail("archive_corrupt", f"Run {run_id} has invalid blocked reasons")
+    operations = plan.get("operations")
+    if not isinstance(operations, dict) or "decision_request" in operations:
+        fail("archive_corrupt", f"Run {run_id} duplicates its decision request")
+    lineage = plan.get("decision_lineage")
+    if lineage is not None and (
+        not isinstance(lineage, dict)
+        or not isinstance(lineage.get("depth"), int)
+        or isinstance(lineage.get("depth"), bool)
+        or not isinstance(lineage.get("resolved_request_ids"), list)
+        or not isinstance(lineage.get("conflict_fingerprints"), list)
+    ):
+        fail("archive_corrupt", f"Run {run_id} has invalid decision lineage")
+    operator_decision = plan.get("operator_decision")
+    if operator_decision is not None:
+        if not isinstance(operator_decision, dict):
+            fail("archive_corrupt", f"Run {run_id} has invalid operator decision")
+        expected_fields = {
+            "authority",
+            "identity_attestation",
+            "recorded_at",
+            "parent_run_id",
+            "parent_plan_sha256",
+            "parent_packet_sha256",
+            "request_id",
+            "conflict_fingerprint",
+            "collision_scope",
+            "response_kind",
+            "choice_key",
+            "response_text",
+            "selected_option",
+            "response_sha256",
+        }
+        if set(operator_decision) != expected_fields:
+            fail("archive_corrupt", f"Run {run_id} has invalid operator decision fields")
+        response_kind = operator_decision.get("response_kind")
+        choice_key = operator_decision.get("choice_key")
+        response_text = operator_decision.get("response_text")
+        response_sha256 = operator_decision.get("response_sha256")
+        if (
+            response_kind not in {"choice", "custom"}
+            or not isinstance(response_text, str)
+            or not isinstance(response_sha256, str)
+            or sha256_text(response_text) != response_sha256
+            or (response_kind == "choice" and choice_key not in {"a", "b", "c"})
+            or (response_kind == "custom" and choice_key is not None)
+        ):
+            fail("archive_corrupt", f"Run {run_id} has invalid operator response binding")
+        collision_scope = operator_decision.get("collision_scope")
+        if (
+            not isinstance(collision_scope, dict)
+            or set(collision_scope) != {"subject_a", "subject_b", "directive_ids", "evidence_ids"}
+            or not all(
+                isinstance(collision_scope.get(field), str)
+                and bool(str(collision_scope[field]).strip())
+                for field in ("subject_a", "subject_b")
+            )
+            or not all(
+                isinstance(collision_scope.get(field), list)
+                and bool(collision_scope[field])
+                and all(isinstance(item, str) and item for item in collision_scope[field])
+                for field in ("directive_ids", "evidence_ids")
+            )
+        ):
+            fail("archive_corrupt", f"Run {run_id} has invalid operator collision scope")
+        selected_option = operator_decision.get("selected_option")
+        if (
+            response_kind == "choice"
+            and (
+                not isinstance(selected_option, dict)
+                or selected_option.get("key") != choice_key
+                or response_text != selected_option.get("label")
+                or not isinstance(selected_option.get("evidence_ids"), list)
+                or not set(selected_option["evidence_ids"]).issubset(
+                    set(collision_scope["evidence_ids"])
+                )
+            )
+        ) or (response_kind == "custom" and selected_option is not None):
+            fail("archive_corrupt", f"Run {run_id} has invalid archived option binding")
     for field in ("import_graph_before", "import_graph_after"):
         snapshot = plan.get(field)
         if snapshot is None:
@@ -120,6 +220,125 @@ def _verified_artifacts(
         fail("archive_corrupt", f"Run artifacts disagree on evidence hash for {run_id}")
     _verify_blob(run_dir, "evidence.json", evidence_sha)
     return run_dir, plan, manifest, state
+
+
+def verified_run_artifacts(
+    config: Config, run_id: str
+) -> tuple[Path, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Load an immutable run after all archive cross-checks."""
+
+    return _verified_artifacts(config, run_id)
+
+
+_DECISION_RESOLUTION_FIELDS = frozenset(
+    {
+        "parent_run_id",
+        "parent_plan_sha256",
+        "request_id",
+        "conflict_fingerprint",
+        "successor_run_id",
+        "successor_plan_sha256",
+        "response_sha256",
+    }
+)
+
+
+def validate_decision_resolution_marker(value: Any) -> dict[str, str]:
+    """Validate the non-sensitive replay marker retained after successor purge."""
+
+    if not isinstance(value, dict) or set(value) != _DECISION_RESOLUTION_FIELDS:
+        fail("archive_corrupt", "A decision resolution marker is malformed")
+    marker = {field: value.get(field) for field in _DECISION_RESOLUTION_FIELDS}
+    if not all(isinstance(item, str) and item for item in marker.values()) or any(
+        len(str(marker[field])) != 64
+        for field in (
+            "parent_plan_sha256",
+            "conflict_fingerprint",
+            "successor_plan_sha256",
+            "response_sha256",
+        )
+    ):
+        fail("archive_corrupt", "A decision resolution marker has invalid identifiers")
+    try:
+        validate_run_id(str(marker["parent_run_id"]))
+        validate_run_id(str(marker["successor_run_id"]))
+        request_id = str(marker["request_id"])
+        if not request_id.startswith("decision-") or len(request_id) != 25:
+            raise ValueError("invalid request ID")
+        int(request_id.removeprefix("decision-"), 16)
+        for field in (
+            "parent_plan_sha256",
+            "conflict_fingerprint",
+            "successor_plan_sha256",
+            "response_sha256",
+        ):
+            int(str(marker[field]), 16)
+    except (ValueError, MeditateError):
+        fail("archive_corrupt", "A decision resolution marker has invalid identifiers")
+    return {field: str(marker[field]) for field in _DECISION_RESOLUTION_FIELDS}
+
+
+def _decision_resolution_marker(plan: dict[str, Any], run_id: str) -> dict[str, str] | None:
+    operator_decision = plan.get("operator_decision")
+    if operator_decision is None:
+        return None
+    if not isinstance(operator_decision, dict):
+        fail("archive_corrupt", f"Run {run_id} has an invalid operator decision")
+    return validate_decision_resolution_marker(
+        {
+            "parent_run_id": operator_decision.get("parent_run_id"),
+            "parent_plan_sha256": plan.get("parent_plan_sha256"),
+            "request_id": operator_decision.get("request_id"),
+            "conflict_fingerprint": operator_decision.get("conflict_fingerprint"),
+            "successor_run_id": run_id,
+            "successor_plan_sha256": plan.get("plan_sha256"),
+            "response_sha256": operator_decision.get("response_sha256"),
+        }
+    )
+
+
+def _purge_run_reports(config: Config, run_id: str, *, execute: bool) -> list[Path]:
+    """Resolve or unlink exact run reports through a non-followed directory fd."""
+
+    reports_root = config.state_root / "reports"
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(reports_root, flags)
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        fail("unsafe_report_path", f"Cannot safely open the configured reports root: {exc}")
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            fail("unsafe_report_path", "The configured reports root is not a directory")
+        paths: list[Path] = []
+        names: list[str] = []
+        for suffix in (".json", ".md"):
+            name = f"{run_id}{suffix}"
+            try:
+                info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                fail("unsafe_report_path", f"Cannot inspect run report {name}: {exc}")
+            if not stat.S_ISREG(info.st_mode):
+                fail("unsafe_report_path", f"Refusing unsafe run report: {name}")
+            paths.append(reports_root / name)
+            names.append(name)
+        if execute:
+            for name in names:
+                try:
+                    info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if not stat.S_ISREG(info.st_mode):
+                        fail("unsafe_report_path", f"Refusing unsafe run report: {name}")
+                    os.unlink(name, dir_fd=descriptor)
+                except FileNotFoundError:
+                    fail("purge_report_failed", f"Run report changed before erasure: {name}")
+                except OSError as exc:
+                    fail("purge_report_failed", f"Could not erase run report {name}: {exc}")
+        return paths
+    finally:
+        os.close(descriptor)
 
 
 def _fd_hash(descriptor: int) -> str:
@@ -333,6 +552,16 @@ def apply_run(
         if plan.get("config_sha256") != config.hash or manifest.get("config_sha256") != config.hash:
             fail("config_drift", "Configuration changed after plan generation; generate a new plan")
         blocked = plan.get("blocked_reasons", [])
+        if "decision_required" in blocked:
+            fail(
+                "decision_required",
+                "The plan has a pending operator authority decision and cannot be applied",
+            )
+        if "compression_regression" in blocked:
+            fail(
+                "compression_regression",
+                "Aggregate post-plan bytes exceed pre-plan bytes; generate a smaller plan",
+            )
         if blocked:
             fail("plan_blocked", f"Plan is blocked: {', '.join(str(item) for item in blocked)}")
         plan_sha = str(plan["plan_sha256"])
@@ -617,34 +846,47 @@ def purge_run(
     config: Config, run_id: str, *, execute: bool = False, force: bool = False
 ) -> dict[str, Any]:
     with exclusive_lock(config.state_root / "meditate.lock"):
-        run_dir, _plan, _manifest, state = _verified_artifacts(config, run_id)
+        run_dir, plan, _manifest, state = _verified_artifacts(config, run_id)
         current = str(state.get("state"))
         if current in {"applied", "applying", "rolling_back", "recovery_required"} and not force:
             fail(
                 "purge_requires_force",
                 f"Purging run {run_id} in state {current} destroys restore ability",
             )
+        decision_resolution = _decision_resolution_marker(plan, run_id)
+        report_paths = _purge_run_reports(config, run_id, execute=execute)
         result = {
             "schema_version": SCHEMA_VERSION,
             "run_id": run_id,
             "state": current,
             "would_delete": str(run_dir),
             "executed": execute,
+            "decision_resolution": decision_resolution,
+            "report_files": [str(path) for path in report_paths],
         }
         if not execute:
             return result
         tombstones = ensure_private_dir(config.data_root / "tombstones")
-        atomic_write_json(
-            tombstones / f"{run_id}.json",
-            {
-                "schema_version": SCHEMA_VERSION,
-                "run_id": run_id,
-                "purged_at": _now(),
-                "previous_state": current,
-                "restore_possible": False,
-            },
-        )
+        tombstone = {
+            "schema_version": SCHEMA_VERSION,
+            "run_id": run_id,
+            "purged_at": _now(),
+            "previous_state": current,
+            "restore_possible": False,
+            "decision_resolution": decision_resolution,
+        }
+        atomic_write_json(tombstones / f"{run_id}.json", tombstone)
         shutil.rmtree(run_dir)
         with contextlib.suppress(Exception):
-            append_log(config, {"event": "run_purged", **result})
+            append_log(
+                config,
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "event": "run_purged",
+                    "run_id": run_id,
+                    "previous_state": current,
+                    "decision_resolution": decision_resolution,
+                    "report_files_deleted": len(report_paths),
+                },
+            )
     return result

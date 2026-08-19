@@ -13,7 +13,11 @@ import meditate.transaction as transaction
 from meditate.models import Authority, EvidenceEvent
 from meditate.plan import create_plan
 from meditate.transaction import apply_run, purge_run, restore_run
-from meditate.util import MeditateError, sha256_bytes
+from meditate.util import MeditateError, canonical_json_bytes, sha256_bytes
+
+OBSOLETE_COMMIT_RULE = (
+    "Commit only when asked, even when completed work has passed all project tests and is ready."
+)
 
 
 def correction(text: str = "New rule: commit completed work after tests.") -> EvidenceEvent:
@@ -31,10 +35,10 @@ def correction(text: str = "New rule: commit completed work after tests.") -> Ev
 
 
 def replacement_plan(config_factory: ConfigFactory):
-    original = "# Git\n\n- Commit only when asked.\n\n- Preserve hand edits.\n"
+    original = f"# Git\n\n- {OBSOLETE_COMMIT_RULE}\n\n- Preserve hand edits.\n"
     config, (target,) = config_factory((original,))
     provider = StubProvider(
-        replace_matching({"Commit only when asked": "- Commit completed work after tests."})
+        replace_matching({OBSOLETE_COMMIT_RULE: "- Commit completed work after tests."})
     )
     plan = create_plan(
         config,
@@ -237,7 +241,7 @@ def test_recover_accepts_interrupted_applying_state(config_factory: ConfigFactor
     state_path = run_dir / "state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
     state.update({"state": "applying", "consumed": True})
-    state_path.write_text(json.dumps(state), encoding="utf-8")
+    state_path.write_bytes(canonical_json_bytes(state))
     receipt = restore_run(config, plan.run_id, recover=True)
     assert receipt["state"] == "restored"
     assert target.read_text(encoding="utf-8") == original
@@ -254,7 +258,7 @@ def test_noop_plan_cannot_be_counted_as_an_apply(config_factory: ConfigFactory) 
 def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_policy(
     config_factory: ConfigFactory,
 ) -> None:
-    original = "# Git\n\n- Commit only when asked.\n"
+    original = f"# Git\n\n- {OBSOLETE_COMMIT_RULE}\n"
     config, (target,) = config_factory((original,))
     config = replace(
         config,
@@ -267,7 +271,7 @@ def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_poli
     reviewed = replace(correction(), unattended_eligible=True)
     provider = StubProvider(
         replace_matching(
-            {"Commit only when asked": "- Commit completed work after project tests pass."}
+            {OBSOLETE_COMMIT_RULE: "- Commit completed work after project tests pass."}
         )
     )
     plan = create_plan(config, provider=provider, inspection=inspection(config, (reviewed,)))
@@ -314,7 +318,7 @@ def test_target_mode_is_preserved(config_factory: ConfigFactory) -> None:
     # The mode is part of the planning snapshot, so regenerate after changing it.
     purge_run(config, plan.run_id, execute=True)
     provider = StubProvider(
-        replace_matching({"Commit only when asked": "- Commit completed work after tests."})
+        replace_matching({OBSOLETE_COMMIT_RULE: "- Commit completed work after tests."})
     )
     fresh = create_plan(config, provider=provider, inspection=inspection(config, (correction(),)))
     apply_run(config, fresh.run_id, mode="attended", approval_sha256=fresh.plan_sha256)
