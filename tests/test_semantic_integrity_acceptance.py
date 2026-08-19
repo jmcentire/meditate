@@ -323,14 +323,23 @@ def test_cli_plan_json_exposes_prompt_and_semantic_verification(
         payload: str,
         schema: dict[str, Any],
     ) -> tuple[str, RunUsage]:
-        raise AssertionError("the local no-candidate gate must not invoke the provider")
+        packet = json.loads(payload)
+        assert packet["stage"] == "semantic_analysis"
+        assert "read-only semantic Analyst" in system
+        return json.dumps({"schema_version": 1, "nominations": []}), RunUsage(
+            calls=1,
+            actual_input_tokens=1,
+            actual_output_tokens=1,
+            stop_reason="end_turn",
+            model_id="synthetic-analyst-model",
+        )
 
     monkeypatch.setattr(AnthropicProvider, "complete", complete)
     assert main(["plan", "--config", str(config_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     expected = {
         "schema_version": 1,
-        "model_id": "not-invoked",
+        "model_id": "synthetic-analyst-model",
         "prompt_version": PLAN_PROMPT_VERSION,
         "prompt_sha256": sha256_bytes(SYSTEM_PROMPT.encode("utf-8")),
         "semantic_verification": {
@@ -339,7 +348,7 @@ def test_cli_plan_json_exposes_prompt_and_semantic_verification(
         },
     }
     _assert_exposes_provenance(payload, expected)
-    assert payload["consolidation_preflight"]["provider_called"] is False
+    assert payload["consolidation_preflight"]["provider_called"] is True
     assert payload["blocked_reasons"] == []
     assert payload["consolidation_preflight"]["outcome"] == "stable_noop"
 
@@ -373,7 +382,7 @@ def _escalation_builder(
             "compiled_directive": empty_compiled_directive(),
             "destination_target": target["target"],
             "heading_path": source["heading_path"],
-            "evidence": [{"id": event["id"], "quote": event["text"]} for event in events],
+            "evidence_ids": [event["id"] for event in events],
             "reason": "Independent evidence calls for deterministic enforcement review.",
             "minimum_apply_mode": "attended",
             "relocation_basis": "",
@@ -391,6 +400,7 @@ def _escalation_builder(
                 if directive["id"] not in change["source_ids"]
             ],
             "changes": [change],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -424,6 +434,8 @@ def test_escalation_is_report_only_preserves_exact_bytes_and_is_locally_enriched
 
     assert plan.changed_directive_count == 0
     assert plan.escalated_directive_count == 1
+    assert plan.consolidation_preflight["outcome"] == "enforcement_candidates"
+    assert plan.consolidation_preflight["enforcement_candidates"] == 1
     assert target.read_bytes() == original
     assert next(iter(plan.proposed_contents.values())).encode("utf-8") == original
     change = plan.raw_plan["changes"][0]
@@ -463,7 +475,10 @@ def test_escalation_is_report_only_preserves_exact_bytes_and_is_locally_enriched
         ("heading", lambda change, _packet: change.update(heading_path=["Other"])),
         ("target", lambda change, _packet: change.update(enforcement_target="file")),
         ("check", lambda change, _packet: change.update(deterministic_check="")),
-        ("one_evidence", lambda change, _packet: change.update(evidence=change["evidence"][:1])),
+        (
+            "one_evidence",
+            lambda change, _packet: change.update(evidence_ids=change["evidence_ids"][:1]),
+        ),
     ],
 )
 def test_invalid_escalations_fail_closed(
@@ -620,7 +635,7 @@ def _contextual_relocation_builder(
                     "compiled_directive": empty_compiled_directive(),
                     "destination_target": destination_override or destination_target["target"],
                     "heading_path": ["Python"],
-                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "evidence_ids": [event["id"]],
                     "reason": "The exact configured rule scope is the contextual destination.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "contextual",
@@ -628,6 +643,7 @@ def _contextual_relocation_builder(
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }

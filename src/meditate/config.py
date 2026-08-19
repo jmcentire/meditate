@@ -54,9 +54,11 @@ class LLMConfig:
     effort: str = "high"
     max_input_tokens: int = 80_000
     max_output_tokens: int = 8_192
-    max_total_input_tokens: int = 80_000
-    max_total_output_tokens: int = 8_192
-    max_calls: int = 1
+    max_total_input_tokens: int = 160_000
+    max_total_output_tokens: int = 16_384
+    # A fresh semantic run may use one read-only Analyst call and one bounded
+    # Drafter call. Stable Analyst results are content-addressed and reused.
+    max_calls: int = 2
     timeout_seconds: int = 300
 
 
@@ -167,9 +169,9 @@ model = "claude-sonnet-4-6"
 effort = "high"
 max_input_tokens = 80000
 max_output_tokens = 8192
-max_total_input_tokens = 80000
-max_total_output_tokens = 8192
-max_calls = 1
+max_total_input_tokens = 160000
+max_total_output_tokens = 16384
+max_calls = 2
 timeout_seconds = 300
 
 [safety]
@@ -317,12 +319,12 @@ def load_config(path: Path | None = None) -> Config:
             llm_raw.get("max_output_tokens", 8_192), "llm.max_output_tokens"
         ),
         max_total_input_tokens=_positive(
-            llm_raw.get("max_total_input_tokens", 80_000), "llm.max_total_input_tokens"
+            llm_raw.get("max_total_input_tokens", 160_000), "llm.max_total_input_tokens"
         ),
         max_total_output_tokens=_positive(
-            llm_raw.get("max_total_output_tokens", 8_192), "llm.max_total_output_tokens"
+            llm_raw.get("max_total_output_tokens", 16_384), "llm.max_total_output_tokens"
         ),
-        max_calls=_positive(llm_raw.get("max_calls", 1), "llm.max_calls"),
+        max_calls=_positive(llm_raw.get("max_calls", 2), "llm.max_calls"),
         timeout_seconds=_positive(llm_raw.get("timeout_seconds", 300), "llm.timeout_seconds"),
     )
     if llm.provider != "anthropic":

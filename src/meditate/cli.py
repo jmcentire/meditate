@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .analyst import analysis_summary
 from .config import (
     Config,
     default_config_path,
@@ -136,9 +137,11 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
         "prompt_version": plan.prompt_version,
         "prompt_sha256": plan.prompt_sha256,
         "semantic_verification": plan.semantic_verification,
+        "semantic_analysis": analysis_summary(plan.semantic_analysis),
         "consolidation_preflight": plan.consolidation_preflight,
         "changed_directives": plan.changed_directive_count,
         "escalated_directives": plan.escalated_directive_count,
+        "new_rule_suggestions": plan.new_rule_suggestion_count,
         "changed_targets": changed_targets,
         "directives": plan.directive_count,
         "pre_directives": plan.directive_count,
@@ -325,6 +328,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 "prompt_version": payload["prompt_version"],
                 "prompt_sha256": payload["prompt_sha256"],
                 "semantic_verification": payload["semantic_verification"],
+                "semantic_analysis": payload["semantic_analysis"],
                 "parent_plan_sha256": payload["parent_plan_sha256"],
                 "parent_packet_sha256": payload["parent_packet_sha256"],
                 **decision_log_summary(
@@ -335,6 +339,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 "changed_targets": payload["changed_targets"],
                 "changed_directives": payload["changed_directives"],
                 "escalated_directives": payload["escalated_directives"],
+                "new_rule_suggestions": payload["new_rule_suggestions"],
                 "pre_directives": payload["pre_directives"],
                 "post_directives": payload["post_directives"],
                 "directive_delta": payload["directive_delta"],
@@ -413,7 +418,9 @@ def _add_model_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="meditate",
-        description="Consolidate agent instructions with temporal evidence and recoverable writes.",
+        description=(
+            "Analyze agent directives with temporal evidence and compile recoverable proposals."
+        ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     common = _base_parent()

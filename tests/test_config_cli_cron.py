@@ -25,6 +25,9 @@ def test_init_writes_private_config_and_refuses_silent_overwrite(
     payload = json.loads(capsys.readouterr().out)
     assert payload["created"] is True
     assert path.read_text(encoding="utf-8") == default_config_text()
+    assert "max_calls = 2" in path.read_text(encoding="utf-8")
+    assert "max_total_input_tokens = 160000" in path.read_text(encoding="utf-8")
+    assert "max_total_output_tokens = 16384" in path.read_text(encoding="utf-8")
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert main(["init", "--config", str(path), "--json"]) == 2
     error = json.loads(capsys.readouterr().err)

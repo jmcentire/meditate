@@ -2,6 +2,137 @@
 
 All notable changes to Meditate are documented here.
 
+## 0.3.0 - 2026-08-19
+
+Meditate v0.3.0 adds the semantic candidate boundary that v0.2.0 lacked. It ships two
+separate production boundaries on the road to a local behavioral-contract compiler:
+evidence-grounded semantic nomination, then bounded directive compilation over only
+locally admitted candidates. Current directives, temporally ordered interactions,
+auto-memory, and required Kindex—an optional local persistent knowledge graph exposed
+through `kin`—can nominate defects and
+missing behaviors that exact lexical deduplication cannot see. This release does not
+promote missing-rule hypotheses. The model has no authority to write, choose an
+unconfigured target, or declare its own output correct.
+
+### Added
+
+- A read-only semantic Analyst, separate from the consolidation Drafter. It can
+  nominate `contradiction`, `temporal_supersession`, `underspecified`,
+  `overspecified`, `wrong_scope`, `enforcement_candidate`, and `missing_rule`
+  candidates in an explicit semantic domain. Every nomination carries exact
+  source IDs, submitted evidence IDs, an intent, a reason, and positive
+  and negative applicability boundaries.
+- Deterministic local admission after the Analyst returns. Unknown or protected
+  directive IDs, invented evidence IDs, too-small evidence records, weak grounding, unsupported
+  temporal claims, one-observation enforcement claims, and unsupported missing
+  rules fail before any plan is archived. The Analyst cannot draft prose,
+  choose a destination, assign authority, answer a collision, or mint durable IDs.
+- Stable local nomination IDs plus intent and evidence fingerprints. Same-target,
+  same-heading existing-rule nominations may enter the bounded Drafter packet;
+  cross-target or cross-heading nominations remain report-only. Semantic domains
+  prevent superficially similar rules in different domains from being collapsed.
+- Evidence-backed missing-rule hypotheses. The Drafter may render an RFC-shaped
+  candidate (`MUST`/`MUST NOT`/`SHOULD`/`SHOULD NOT`/`MAY`, rule, reason, scope,
+  and optional boundary example), but it has `write_authority=none`, never enters
+  proposed target bytes, cannot be applied, and requires a later explicit
+  promotion plus owner-authored behavioral qualification. Version 0.3 deliberately
+  ships no promotion command.
+- A private, content-addressed semantic-analysis cache. An exact sanitized input,
+  config, provider/model, prompt, schema, and parser tuple reuses the validated
+  result without another Analyst call. The first exact snapshot is analyzed;
+  stable repeats are byte-identical cache-backed no-ops.
+- Hash-bound `analysis.json` run artifacts, semantic summaries in plans,
+  manifests, reports, CLI JSON, and JSONL, and archive verification that rejects
+  tampering or prompt/parser drift.
+- Synthetic acceptance coverage for conversation-driven supersession, report-only
+  missing rules, cross-scope contradiction reporting, under/over/scope candidates,
+  repeated-evidence enforcement, Analyst smuggling attempts, and ten-run stability.
+- Boundary-aware verifier protocol v3. Literal command detectors use alphanumeric
+  boundaries and clause-local negation filtering, preventing `npm test` from matching
+  inside `pnpm test` or a prohibition from being counted as an execution.
+- Parser v32 rejects a second embedded uppercase RFC 2119 keyword inside a typed rule,
+  preserving the single locally rendered normative operator.
+
+### Live v0.3.0 receipts
+
+- Claude `20260819T200834Z-321749c4` found four semantic nominations and compiled one
+  report-only enforcement escalation plus one missing-rule suggestion. Outcome
+  `enforcement_candidates` preserved 65 directives/10,703 bytes and target SHA-256
+  `441fe6e9af0302329b753fa9138f6a5fc5c556637991bfec679700adea1acb76`.
+- Codex `20260819T200912Z-ef9020d0` found five semantic nominations. Its Drafter introduced
+  unsupported force, so `drafter_rejected` preserved 33 directives/4,276 bytes and target
+  SHA-256 `0dd415bb140f10fe95c70005e33ca523f1ed60419a79bbfeabdf9a31446c6b63`.
+- Both exact-repeat receipts used the Analyst cache and current Analyst v4/parser v5 plus
+  Drafter v16/parser v32. Neither changed target bytes or established behavioral equivalence.
+- Disposable package-manager plans `20260819T204620Z-53e25b49` (Claude) and
+  `20260819T204859Z-ab0a357e` (Codex) each compiled an admitted temporal `npm`→`pnpm`
+  rewrite. Claude Code 2.1.224/`claude-sonnet-4-6` and Codex CLI 0.147.0/`gpt-5.6-sol`
+  each passed three repeats of two trigger probes plus one counter-probe. Verification
+  SHAs were `608c186ffa650fd7f6373c586811e926d299b48ca1da378b0ca4de5d29ee8c8c`
+  and `5aa093c94010685ecf9278eafe06b12fda5cc628f0019b5e8e4fc3182cc3f241`.
+  Only the disposable Codex-qualified plan was applied. Its target reached SHA-256
+  `838ce9afe2405bb6ff999dc64722cc89191ece65b35b786ab6dd2615e0135f2b`; repeat run
+  `20260819T205423Z-f3b11c4a` was byte-identical `reviewed_noop`, preserving the
+  historical nomination for audit with zero confirmed unresolved defects. Real Claude
+  and Codex instruction files were unchanged.
+
+### Changed
+
+- The default call budget is two: at most one read-only Analyst call and one
+  bounded Drafter call on a fresh semantic run. Newly generated configs use
+  aggregate input/output defaults of 160,000/16,384 tokens so two allowed calls
+  do not inherit a one-call total. Existing explicit budgets remain unchanged,
+  cover both stages, and fail before the Drafter when insufficient. Cache hits
+  consume no Analyst call.
+- `stable_noop` remains the fixed point, but the first exact snapshot is no longer
+  claimed to be a zero-provider-call run. It may require one Analyst call to know
+  that there is no semantic nomination; exact subsequent runs reuse the cache.
+- Interaction history and Kindex are now semantic evidence, not merely weights on
+  lexical candidates. When Kindex is enabled and available, every configured
+  query and requested node read remains mandatory; failure aborts with
+  `kindex_required_failed` rather than silently weakening the analysis.
+- Analyst packets publish exact `allowed_source_ids` and `allowed_evidence_ids` arrays;
+  ID-shaped strings inside untrusted histories or directive prose cannot become references.
+- Both model stages cite evidence by immutable ID only. Local code materializes the exact
+  sanitized text into artifacts, eliminating stochastic quote-copying from the trust boundary.
+- Per-nomination rejection: malformed top-level output still aborts, while an invalid
+  nomination is rejected and counted without discarding independently valid siblings. When all
+  nominations are rejected, the result is `semantic_analysis_inconclusive`, never `stable_noop`.
+- A semantic Drafter proposal that parses but fails an explicitly allowlisted semantic-quality
+  gate now archives an unchanged `drafter_rejected` receipt with its rejection code. Authority,
+  schema, secrecy, scope, candidate-boundary, and malformed top-level failures still abort, and
+  no validator is weakened to make a model proposal pass.
+- Drafter prompt version 16, SHA-256
+  `5f3863095efd232010b596bdefb35bde79ace8047ac595757f03115064fb5a51`, and
+  parser `meditate-parser-v32`; Analyst prompt version 4, SHA-256
+  `254f2afb6ccb583146823ff96396dc6c7cf8099f1e1754c9e2fea780b8118847`, and
+  parser `meditate-analyst-parser-v5`. Older plans fail closed rather than being
+  reinterpreted under the new two-stage contract.
+- Missing-rule drafts now return only an exact allowlisted nomination ID. Local code inherits the
+  nomination's complete immutable evidence set, eliminating a stochastic provenance-copy step;
+  unknown nomination IDs still abort.
+- Existing-rule changes inside an admitted semantic candidate likewise inherit that candidate's
+  complete evidence set. Model-supplied IDs may only be a subset of the bound set; unrelated IDs
+  abort, while structural single-rule rewrites still require explicit evidence.
+- Single-source semantic observations with no external evidence are now report-only instead of
+  mutable. Multi-source source-grounded candidates remain eligible without external history.
+- Report-only escalations now use the distinct `enforcement_candidates` outcome. They do not claim
+  behavioral qualification or defect resolution, and target bytes remain unchanged.
+- A total keep disposition over an admitted semantic hypothesis now reports
+  `review_candidates_preserved`/`reviewed_noop` with zero confirmed unresolved defects.
+  The nomination remains in the immutable report; a review hypothesis is not relabeled as a fact.
+- Promotion remains explicit: single-source existing-rule observations require external evidence
+  or corroborating sources; missing rules require operator promotion plus an owner suite; and
+  escalations require deliberate enforcement installation plus qualification.
+
+### Boundary
+
+Semantic nomination is not semantic proof. Existing-rule changes still require
+the planner-blind owner suite before apply. Missing-rule hypotheses are not
+writeable in this release. The system can expose a likely gap and the evidence
+for it; it cannot let the same model invent the grading criterion, promote the
+rule, and then certify itself.
+
 ## 0.2.0 - 2026-08-19
 
 Meditate v0.2.0 now treats a stable, defect-free directive set as its fixed point.

@@ -77,6 +77,49 @@ class StubProvider:
         )
 
 
+class StageProvider:
+    """Synthetic provider with independent Analyst and Drafter contracts."""
+
+    name = "stub"
+    model = "stub-model-v1"
+
+    def __init__(self, analyst_builder: PlanBuilder, plan_builder: PlanBuilder) -> None:
+        self.analyst_builder = analyst_builder
+        self.plan_builder = plan_builder
+        self.calls = 0
+        self.analysis_calls = 0
+        self.plan_calls = 0
+        self.last_analysis_packet: dict[str, Any] | None = None
+        self.last_plan_packet: dict[str, Any] | None = None
+
+    def complete(
+        self, *, system: str, payload: str, schema: dict[str, Any]
+    ) -> tuple[str, RunUsage]:
+        assert "untrusted data" in system
+        assert schema["type"] == "object"
+        packet = json.loads(payload)
+        self.calls += 1
+        if packet.get("stage") == "semantic_analysis":
+            self.analysis_calls += 1
+            self.last_analysis_packet = packet
+            result = self.analyst_builder(packet)
+        else:
+            self.plan_calls += 1
+            self.last_plan_packet = packet
+            result = self.plan_builder(packet)
+        return json.dumps(result), RunUsage(
+            calls=1,
+            actual_input_tokens=max(1, len(payload) // 4),
+            actual_output_tokens=100,
+            stop_reason="end_turn",
+            model_id=self.model,
+        )
+
+
+def no_semantic_nominations(_packet: dict[str, Any]) -> dict[str, Any]:
+    return {"schema_version": 1, "nominations": []}
+
+
 class StubVerificationRunner:
     agent = "claude"
     model = "stub-consumer-v1"
@@ -200,7 +243,7 @@ def replace_matching(
                         "compiled_directive": compiled_directive(replacement),
                         "destination_target": target["target"],
                         "heading_path": directive["heading_path"],
-                        "evidence": [{"id": evidence["id"], "quote": evidence["text"]}],
+                        "evidence_ids": [evidence["id"]],
                         "reason": "The cited newer user correction replaces the old behavior.",
                         "minimum_apply_mode": "attended",
                         "relocation_basis": "",
@@ -212,6 +255,7 @@ def replace_matching(
             "schema_version": 1,
             "keep": keep,
             "changes": changes,
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -226,6 +270,7 @@ def keep_all(packet: dict[str, Any]) -> dict[str, Any]:
             directive["id"] for target in packet["targets"] for directive in target["directives"]
         ],
         "changes": [],
+        "new_rule_suggestions": [],
         "decision_request": None,
         "unresolved_conflicts": [],
     }

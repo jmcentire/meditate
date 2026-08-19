@@ -135,6 +135,7 @@ def _decision_plan(
             directive["id"] for target in packet["targets"] for directive in target["directives"]
         ],
         "changes": [],
+        "new_rule_suggestions": [],
         "decision_request": request,
         "unresolved_conflicts": [],
     }
@@ -1721,6 +1722,7 @@ def _lane_decision_plan(packet: dict[str, Any], lane: int) -> dict[str, Any]:
         "schema_version": 1,
         "keep": [directive["id"] for directive in directives],
         "changes": [],
+        "new_rule_suggestions": [],
         "decision_request": request,
         "unresolved_conflicts": [],
     }
@@ -2063,7 +2065,7 @@ def _protected_change_plan(packet: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "destination_target": target["target"],
                 "heading_path": source["heading_path"],
-                "evidence": [{"id": event["id"], "quote": event["text"]}],
+                "evidence_ids": [event["id"]],
                 "reason": "The cited handoff preference is made more restrictive.",
                 "minimum_apply_mode": "attended",
                 "relocation_basis": "",
@@ -2071,6 +2073,7 @@ def _protected_change_plan(packet: dict[str, Any]) -> dict[str, Any]:
                 "deterministic_check": "",
             }
         ],
+        "new_rule_suggestions": [],
         "decision_request": None,
         "unresolved_conflicts": [],
     }
@@ -2163,6 +2166,7 @@ def _workflow_decision_plan(packet: dict[str, Any]) -> dict[str, Any]:
         "schema_version": 1,
         "keep": [directive["id"] for directive in directives],
         "changes": [],
+        "new_rule_suggestions": [],
         "decision_request": request,
         "unresolved_conflicts": [],
     }
@@ -2186,7 +2190,7 @@ def _unsafe_workflow_successor(packet: dict[str, Any]) -> dict[str, Any]:
                 "compiled_directive": compiled_directive(BAD_WORKFLOW),
                 "destination_target": target["target"],
                 "heading_path": directives[0]["heading_path"],
-                "evidence": [{"id": event["id"], "quote": event["text"]}],
+                "evidence_ids": [event["id"]],
                 "reason": "The selected option is expressed as one workflow directive.",
                 "minimum_apply_mode": "attended",
                 "relocation_basis": "",
@@ -2194,6 +2198,7 @@ def _unsafe_workflow_successor(packet: dict[str, Any]) -> dict[str, Any]:
                 "deterministic_check": "",
             }
         ],
+        "new_rule_suggestions": [],
         "decision_request": None,
         "unresolved_conflicts": [],
     }

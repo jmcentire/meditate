@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -28,7 +29,7 @@ from .util import (
 )
 
 VERIFICATION_SCHEMA_VERSION = 2
-VERIFICATION_PROMPT_VERSION = "2"
+VERIFICATION_PROMPT_VERSION = "3"
 VERIFICATION_METHOD = "owner_defined_hidden_detector_suite_v2"
 MAX_SUITE_BYTES = 1_000_000
 MAX_CASES = 32
@@ -37,6 +38,10 @@ MAX_DETECTOR_PHRASES = 16
 MAX_STEPS = 128
 MAX_TEXT_CHARS = 12_000
 _ACTION_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
+_ACTION_CLAUSE_BOUNDARY = re.compile(r"[.;:!?\n]|,\s*(?:and|but|then)\s+")
+_NEGATED_DETECTOR_CONTEXT = re.compile(
+    r"\b(?:do not|don't|never|avoid|without|rather than|instead of|not)\b"
+)
 
 
 def _now() -> str:
@@ -627,7 +632,26 @@ def _detected_actions(
     positions: dict[str, int] = {}
     for action in case.allowed_actions:
         phrases = action_detectors[action]
-        matches = [normalized.find(phrase) for phrase in phrases]
+        matches: list[int] = []
+        for phrase in phrases:
+            pattern = re.escape(phrase)
+            if phrase[0].isalnum() or phrase[0] == "_":
+                pattern = rf"(?<!\w){pattern}"
+            if phrase[-1].isalnum() or phrase[-1] == "_":
+                pattern = rf"{pattern}(?!\w)"
+            affirmative = []
+            for match in re.finditer(pattern, normalized):
+                context = _ACTION_CLAUSE_BOUNDARY.split(
+                    normalized[max(0, match.start() - 160) : match.start()]
+                )[-1]
+                context = re.sub(
+                    r"[`*_~()\[\]{}]",
+                    " ",
+                    context,
+                )
+                if not _NEGATED_DETECTOR_CONTEXT.search(context):
+                    affirmative.append(match.start())
+            matches.append(min(affirmative) if affirmative else -1)
         present = [position for position in matches if position >= 0]
         if present:
             positions[action] = min(present)

@@ -146,9 +146,9 @@ def test_prompt_encodes_action_coverage_not_order_and_stage_availability() -> No
     assert re.search(r"stop.{0,100}approval.{0,100}named\s+handoff", prompt)
 
 
-def test_prompt_v9_parser_v24_require_literal_destination_targets_for_every_change() -> None:
-    assert PLAN_PROMPT_VERSION == "10"
-    assert PARSER_VERSION == "meditate-parser-v25"
+def test_prompt_v13_parser_v28_require_literal_destination_targets_for_every_change() -> None:
+    assert PLAN_PROMPT_VERSION == "16"
+    assert PARSER_VERSION == "meditate-parser-v32"
     prompt = " ".join(SYSTEM_PROMPT.lower().split())
     assert re.search(
         r"every\s+change.{0,180}destination_target|"

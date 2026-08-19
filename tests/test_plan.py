@@ -349,7 +349,7 @@ def test_local_validation_rejects_invented_plan_references(
                     ),
                     "destination_target": destination_target,
                     "heading_path": directive["heading_path"],
-                    "evidence": [{"id": evidence_id, "quote": event["text"]}],
+                    "evidence_ids": [evidence_id],
                     "reason": "Synthetic reference-validation fixture.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -357,6 +357,7 @@ def test_local_validation_rejects_invented_plan_references(
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -407,7 +408,7 @@ def test_non_relocate_change_rejects_another_allowed_destination_target(
                     ),
                     "destination_target": other_target["target"],
                     "heading_path": source["heading_path"],
-                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "evidence_ids": [event["id"]],
                     "reason": "Synthetic non-relocate destination mismatch.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -415,6 +416,7 @@ def test_non_relocate_change_rejects_another_allowed_destination_target(
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -486,7 +488,9 @@ def test_noop_plan_converges_without_marking_target_changed(config_factory: Conf
     assert manifest["targets"][0]["changed"] is False
 
 
-def test_plan_rejects_ungrounded_evidence_quote(config_factory: ConfigFactory) -> None:
+def test_plan_materializes_exact_evidence_text_from_a_cited_id(
+    config_factory: ConfigFactory,
+) -> None:
     config, _paths = config_factory(("# Git\n\n- Commit only when asked.\n",))
 
     def builder(packet: dict[str, object]) -> dict[str, object]:
@@ -503,7 +507,7 @@ def test_plan_rejects_ungrounded_evidence_quote(config_factory: ConfigFactory) -
                     "compiled_directive": compiled_directive("Commit after tests."),
                     "destination_target": target["target"],
                     "heading_path": directive["heading_path"],
-                    "evidence": [{"id": event["id"], "quote": "invented quote"}],
+                    "evidence_ids": [event["id"]],
                     "reason": "fixture",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -511,16 +515,16 @@ def test_plan_rejects_ungrounded_evidence_quote(config_factory: ConfigFactory) -
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
 
-    with pytest.raises(MeditateError) as caught:
-        create_plan(
-            config, provider=StubProvider(builder), inspection=inspection(config, (correction(),))
-        )
-    assert caught.value.code == "ungrounded_quote"
-    assert not (config.data_root / "runs").exists()
+    event = correction()
+    plan = create_plan(
+        config, provider=StubProvider(builder), inspection=inspection(config, (event,))
+    )
+    assert plan.raw_plan["changes"][0]["evidence"] == [{"id": event.id, "quote": event.text}]
 
 
 def test_plan_rejects_urgency_not_present_in_source_or_evidence(
@@ -556,6 +560,22 @@ def test_rfc_normative_keyword_is_not_an_unsupported_intensifier(
         inspection=inspection(config, (correction(),)),
     )
     assert plan.raw_plan["changes"][0]["compiled_directive"]["normative_keyword"] == "MUST"
+
+
+def test_compiled_rule_rejects_a_second_embedded_normative_keyword(
+    config_factory: ConfigFactory,
+) -> None:
+    config, _paths = config_factory(("# Package management\n\n- Use npm for scripts.\n",))
+    base_builder = replace_matching({"Use npm": "Use `pnpm` for scripts. MUST NOT use `npm`."})
+
+    with pytest.raises(MeditateError) as caught:
+        create_plan(
+            config,
+            provider=StubProvider(base_builder),
+            inspection=inspection(config, (correction(),)),
+        )
+
+    assert caught.value.code == "invalid_compiled_directive"
 
 
 def test_typed_scope_can_restate_grounded_universal_intensifier(
@@ -826,7 +846,7 @@ def test_replace_cannot_consolidate_across_headings(config_factory: ConfigFactor
                     ),
                     "destination_target": target["target"],
                     "heading_path": directives[0]["heading_path"],
-                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "evidence_ids": [event["id"]],
                     "reason": "bad cross-heading consolidation",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -834,6 +854,7 @@ def test_replace_cannot_consolidate_across_headings(config_factory: ConfigFactor
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -896,7 +917,7 @@ def test_relocate_within_same_file_moves_instead_of_replacing_in_place(
                     "compiled_directive": empty_compiled_directive(),
                     "destination_target": target["target"],
                     "heading_path": ["Project"],
-                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "evidence_ids": [event["id"]],
                     "reason": "Scope-specific evidence places this under Project.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "organization",
@@ -904,6 +925,7 @@ def test_relocate_within_same_file_moves_instead_of_replacing_in_place(
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }

@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from . import plan as plan_module
+from .analyst import (
+    ANALYST_PARSER_VERSION,
+    ANALYST_PROMPT,
+    ANALYST_PROMPT_VERSION,
+    analysis_summary,
+)
 from .config import Config
 from .imports import build_import_graph
 from .plan import (
@@ -101,6 +107,8 @@ def _verified_artifacts(
         "prompt_version",
         "prompt_sha256",
         "semantic_verification",
+        "semantic_analysis_summary",
+        "semantic_analysis_sha256",
         "consolidation_preflight",
         "decision_request",
         "operator_decision",
@@ -230,6 +238,24 @@ def _verified_artifacts(
     if not isinstance(evidence_sha, str) or manifest.get("packet_sha256") != evidence_sha:
         fail("archive_corrupt", f"Run artifacts disagree on evidence hash for {run_id}")
     _verify_blob(run_dir, "evidence.json", evidence_sha)
+    semantic_fields = {
+        "semantic_analysis",
+        "semantic_analysis_summary",
+        "semantic_analysis_sha256",
+    }
+    if semantic_fields & set(plan):
+        semantic_analysis = plan.get("semantic_analysis")
+        semantic_analysis_sha = plan.get("semantic_analysis_sha256")
+        if (
+            not semantic_fields.issubset(plan)
+            or not isinstance(semantic_analysis, dict)
+            or not isinstance(semantic_analysis_sha, str)
+            or len(semantic_analysis_sha) != 64
+            or sha256_bytes(canonical_json_bytes(semantic_analysis)) != semantic_analysis_sha
+            or plan.get("semantic_analysis_summary") != analysis_summary(semantic_analysis)
+        ):
+            fail("archive_corrupt", f"Run {run_id} has invalid semantic analysis provenance")
+        _verify_blob(run_dir, "analysis.json", semantic_analysis_sha)
     return run_dir, plan, manifest, state
 
 
@@ -554,6 +580,20 @@ def apply_run(
             fail(
                 "prompt_sha256_drift",
                 "Plan prompt hash differs from the local planner; generate a new plan",
+            )
+        semantic_analysis = plan.get("semantic_analysis")
+        if (
+            isinstance(semantic_analysis, dict)
+            and semantic_analysis.get("status") != "not_run"
+            and (
+                semantic_analysis.get("parser_version") != ANALYST_PARSER_VERSION
+                or semantic_analysis.get("prompt_version") != ANALYST_PROMPT_VERSION
+                or semantic_analysis.get("prompt_sha256") != sha256_text(ANALYST_PROMPT)
+            )
+        ):
+            fail(
+                "analyst_version_drift",
+                "Semantic Analyst prompt/parser differs from the plan; generate a new plan",
             )
         if plan.get("config_sha256") != config.hash or manifest.get("config_sha256") != config.hash:
             fail("config_drift", "Configuration changed after plan generation; generate a new plan")

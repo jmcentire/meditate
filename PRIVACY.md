@@ -3,10 +3,14 @@
 Meditate is a locally operated command-line tool. It does not operate a hosted service,
 collect product telemetry, create user accounts, or maintain a remote memory store.
 
-`meditate inspect` is entirely local and makes no model call. `meditate plan` and
-`meditate run` invoke the explicitly configured Anthropic model only when local
-preflight finds a consolidation candidate; a stable no-op makes zero calls.
-Before a planning request, evidence undergoes local streaming, deduplication,
+`meditate inspect` is entirely local and makes no model call. On a fresh exact
+snapshot, `meditate plan` and `meditate run` invoke the explicitly configured
+Anthropic model for a read-only semantic Analyst pass even when the correct result
+is a stable no-op. The validated analysis is content-addressed; an exact cache hit
+makes no Analyst call, and no Drafter call occurs unless an admitted existing-rule
+candidate or missing-rule hypothesis exists. Fresh semantic planning is bounded to
+at most one Analyst and one Drafter call by default.
+Before either planning request, evidence undergoes local streaming, deduplication,
 secret detection, redaction, deterministic selection, and hard token limits.
 High-confidence secret-bearing records are excluded wholesale. Meditate never
 silently chooses a different provider or model.
@@ -21,14 +25,21 @@ answer. `meditate decide` rejects a recognized high-confidence secret shape in a
 custom response before submission. Other selected-option
 and custom text is still user-derived content; it is not anonymous or risk-free.
 
-The Anthropic request includes the system prompt, output schema, configured target
-path labels and hashes, mutable candidate directive text and metadata, bounded
-related immutable context, selected interaction evidence text and metadata,
-authority/comparison rules, overlap candidates, and parser-degradation state.
-Non-candidate directive IDs are not sent to the planner. Directive and evidence
-text is locally secret-scanned and redacted, but it remains user-derived content;
-it is not claimed to be anonymous or risk-free. Unselected and wholesale-excluded
-history records are not sent.
+The Analyst request includes its system prompt and schema, configured target path
+labels and hashes, the complete sanitized configured directive set, bounded imported
+immutable context, and selected temporally ordered interaction, auto-memory, and
+Kindex evidence with metadata. When Kindex is enabled, selected node content is
+therefore provider-bound user data even though Kindex itself is read-only. The
+Drafter request includes its separate prompt/schema, only admitted mutable candidate
+directive IDs/text, bounded related immutable context, the validated semantic artifact,
+and evidence required by admitted nominations or missing-rule hypotheses. Unrelated
+directive IDs are not sent to the Drafter.
+
+Directive and evidence text is locally secret-scanned and redacted, but it remains
+user-derived content; it is not claimed to be anonymous or risk-free. Unselected and
+wholesale-excluded history records are not sent. A semantic cache entry stores the
+sanitized model response plus prompt/schema/parser/model and packet hashes locally;
+it does not contain a provider credential.
 
 `meditate verify` is a separate model-backed operation. It sends the owner-authored
 neutral probe/counter-probe scenarios with opaque case references and, in predecessor
@@ -49,8 +60,8 @@ be read as evidence. Histories, memory, and Kindex are read-only; Meditate write
 only exact instruction targets declared in its configuration. Model output is
 untrusted and cannot choose filesystem paths or mint durable identifiers.
 
-`plan.json`, `manifest.json`, `evidence.json`, frozen `verification-suite.json`,
-`verification.json`, and run-specific JSON/Markdown
+`analysis.json`, `plan.json`, `manifest.json`, `evidence.json`, semantic cache
+entries, frozen `verification-suite.json`, `verification.json`, and run-specific JSON/Markdown
 reports are private local plan artifacts stored in XDG state/data directories.
 Depending on the run, they contain the current decision request or bounded
 collision scope, the exact selected/custom response, private verifier assertions
@@ -78,4 +89,4 @@ review their model provider's data-handling terms before enabling model calls or
 opt-in transcript bodies.
 
 See the [full privacy page](https://jmcentire.github.io/meditate/privacy.html) for
-details. Last updated August 19, 2026; applies to Meditate 0.2.x.
+details. Last updated August 19, 2026; applies to Meditate 0.3.x.

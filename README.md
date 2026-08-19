@@ -5,13 +5,18 @@
 [Design brief](docs/design-brief.md) ·
 [Changelog](CHANGELOG.md)
 
-Current package version: **0.2.0 alpha**.
+Current package version: **0.3.0 alpha**.
 
-Meditate is a locally operated CLI for resolving defects in the behavioral directives
-that Claude Code and OpenAI Codex load. It targets the actual failure mode: corrections
-are commonly appended as new exceptions while the obsolete rule remains in place.
-Its fixed point is stability, not shrinkage: a well-formed file is a successful,
-byte-identical no-op.
+Meditate's product goal is a locally operated behavioral-contract compiler and policy
+router for the directives Claude Code and OpenAI Codex load. Version 0.3 delivers two
+separate production boundaries: an evidence-grounded semantic Analyst that nominates
+possible defects, and a bounded directive compiler that can act only on locally admitted
+candidates. It reads current prose together with temporally ordered interactions and
+Kindex—an optional local persistent knowledge graph exposed through `kin`—then identifies
+contradictions, supersession, under- and over-specification, wrong scope, enforcement
+candidates, and evidence-backed missing-rule hypotheses. Missing rules are still
+report-only; v0.3 does not yet promote them into the durable contract. Its fixed point is
+stability, not shrinkage: a well-formed file is a successful, byte-identical no-op.
 
 > **Authority before confidence.** A fluent or high-confidence rewrite has no
 > authority of its own. Current instructions, explicit corrections, applicable
@@ -28,21 +33,27 @@ Meditate does not let an LLM directly regenerate or write your instruction file.
    rather than silently omitting that durable evidence source;
 6. validates Claude `@path` imports and sends imported documents only as sanitized,
    explicitly read-only context;
-7. locally identifies confirmed duplicate defects and bounded exception-lineage review
-   candidates; when none exist it returns a zero-token successful no-op;
-8. asks an exact model for a five-disposition operation list: keep, replace,
+7. runs a separate read-only semantic Analyst over the complete sanitized directive
+   set and selected evidence; the Analyst may nominate seven bounded candidate classes
+   but cannot draft prose, choose a path, assign authority, or authorize a write;
+8. validates every Analyst citation and source ID locally, admits only same-target,
+   same-heading existing-rule candidates to the mutable boundary, and keeps missing
+   rules and cross-scope findings report-only;
+9. asks an exact model for a five-disposition operation list: keep, replace,
    remove, relocate, or report-only escalate. Semantic replacements are typed records
    containing an RFC 2119 keyword, rule, rationale, scope, and optional boundary example;
-9. validates every ID, exact evidence quote, destination, size/churn bound, and
-   secret scan locally, including external verification and explicit authority
+10. accepts model citations only as exact allowed evidence IDs, materializes their
+   substantive sanitized text locally (at least 12 characters and two meaningful
+   terms), and validates every destination, size/churn bound, and secret scan locally,
+   including external verification and explicit authority
    boundaries for newly introduced merge/release/deploy actions;
-10. turns a genuine unresolved authority collision into one bounded
+11. turns a genuine unresolved authority collision into one bounded
    `a`/`b`/`c`/custom question instead of letting the model choose for the user;
-11. binds model/prompt provenance, import graphs, semantic status, and pre/post
-   directive/byte/line metrics into the plan hash;
-12. runs an owner-authored, planner-blind probe/counter-probe suite against control,
+12. binds both stage prompts/models, the semantic artifact, import graphs, semantic
+   status, and pre/post directive/byte/line metrics into the plan hash;
+13. runs an owner-authored, planner-blind probe/counter-probe suite against control,
    predecessor, and candidate instructions before any changed plan can apply; and
-13. renders unchanged spans byte-for-byte, archives pre/post images, and writes only
+14. renders unchanged spans byte-for-byte, archives pre/post images, and writes only
    after the verification receipt and exact plan hash are accepted.
 
 Raw histories are read-only. A history record with a high-confidence credential
@@ -53,12 +64,12 @@ private XDG data/state directories, not this repository.
 
 ### GitHub Release wheel
 
-The canonical public distribution surface for v0.2.0 is the versioned wheel
+The canonical public distribution surface for v0.3.0 is the versioned wheel
 attached to its GitHub Release. After that release asset is published:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.2.0/meditate_agent-0.2.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl
 .venv/bin/meditate init
 ```
 
@@ -79,6 +90,11 @@ The default config is `~/.config/meditate/config.toml`. It targets
 transcript bodies disabled, and enables Kindex when `kin` is available. Add
 `~/.codex/AGENTS.md` to `targets` and `codex` to `sources.agents` to include
 Codex. Every writable file must appear in the exact `targets` allowlist.
+Fresh semantic planning can use one Analyst call and one Drafter call, so the v0.3
+default is `llm.max_calls = 2`; new configs default aggregate input/output budgets to
+160,000/16,384 tokens across both. Existing explicit budgets remain unchanged and
+fail closed if they cannot cover a required Drafter call. An exact Analyst cache hit
+consumes no provider call.
 
 Configured `.claude/rules/**/*.md` targets may declare a simple YAML frontmatter
 `paths:` list. Contextual guidance may relocate only into one of those exact,
@@ -244,26 +260,83 @@ may make a directive larger and still be the correct result. The configured size
 floor, absolute growth headroom, Claude line guidance, and Codex byte budget remain
 safety boundaries, not quality targets.
 
-The deterministic preflight currently distinguishes:
+The deterministic lexical preflight distinguishes:
 
 - `exact_duplicate`, a confirmed local defect; and
 - `exception_lineage`, a conservative same-heading, shared-subject review candidate,
   not proof that the prose is wrong.
 
-Density, file age, history overlap, and byte count do not create a defect. If no
-candidate exists, `plan` does not resolve credentials or construct a provider. It
-exits successfully with `outcome=stable_noop`, zero model calls, unchanged target
-hashes, and `semantic_verification.status=not_applicable`. If candidates exist but
-the model finds no admissible resolution, the report says `reviewed_noop`; it does
-not disguise that state as “nothing detected.”
+Density, file age, history overlap, and byte count do not create a defect. Lexical
+preflight is not the whole detector: a separate semantic Analyst sees the complete
+sanitized directive set, temporal interactions, memory, and required Kindex evidence.
+It may nominate `contradiction`, `temporal_supersession`, `underspecified`,
+`overspecified`, `wrong_scope`, `enforcement_candidate`, or `missing_rule` in an
+explicit semantic domain. The first exact snapshot may therefore consume one Analyst
+call even when the correct result is `outcome=stable_noop`. Its validated result is
+content-addressed; exact repeats make no Analyst call, make no Drafter call, preserve
+target bytes, and record `semantic_verification.status=not_applicable`.
 
-A successful changed plan receives the complete non-overlapping candidate set.
+The distinction in reports is deliberate. `stable_noop` means neither local preflight
+nor the semantic Analyst nominated work. `semantic_review_required` means the Analyst
+found a report-only issue that local policy did not admit to mutation.
+`new_rule_hypotheses` means interaction or active Kindex evidence supports a missing
+behavior, but no target bytes changed. `reviewed_noop` means an admitted candidate was
+examined and deliberately preserved; the hypothesis remains auditable but is not mislabeled
+as a confirmed unresolved defect. `enforcement_candidates` means one or more directives
+were preserved in prose and reported for hook/settings enforcement; the underlying defect remains
+unresolved until that enforcement is deliberately installed and qualified.
+`semantic_analysis_inconclusive` means every
+Analyst nomination failed local validation; it is never reported as a clean file.
+`drafter_rejected` means semantic nominations survived, but the proposed rewrite failed an
+explicitly allowlisted semantic-quality gate; Meditate archives the analysis and rejection code
+while preserving every target byte. Authority, schema, secrecy, scope, and candidate-boundary
+violations still abort before publication. None is disguised as another. A malformed top-level
+response still aborts, while invalid individual Analyst nominations are rejected and counted
+without discarding valid siblings.
+
+A successful changed plan receives the complete non-overlapping admitted candidate set.
 Each change stays within one heading and subject. Local code renders the entire
 post-image and rejects it with `non_idempotent_proposal` if a confirmed defect is
 still detectable. The acceptance suite covers an unchanged well-formed fixture,
 a corrected defective fixture, a second invocation over each result, ten no-drift
 iterations, and a multi-defect fixture that must reach its fixed point in one
 successful plan.
+
+## Semantic nominations are not authority
+
+The Analyst returns hypotheses, not defects or directives. Local code rejects unknown
+or protected directive IDs, invented evidence IDs, minimal evidence records, intent with fewer
+than three shared grounding terms, unsupported temporal claims, one-observation
+enforcement claims, and missing-rule
+claims without explicit durability, an active Kindex directive, or repeated independent
+corrections. Stable local IDs and evidence/intent fingerprints are computed after
+validation; the model cannot mint them.
+
+Same-target, same-heading nominations about existing prose may become bounded Drafter
+candidates. Cross-target and cross-heading findings remain report-only because scope
+cannot be averaged safely. For admitted semantic changes, local code inherits the complete
+candidate evidence set; any model-supplied evidence IDs must belong to that set. A single-source
+semantic observation without external evidence is report-only rather than mutation authority. A `missing_rule`
+has no source directive and remains a
+report-only RFC-shaped suggestion with `write_authority=none`; it is never rendered into
+the proposed file and cannot be applied. The Drafter returns only an exact allowlisted
+nomination ID; local code inherits that nomination's immutable evidence set instead of asking
+the model to copy provenance. Promotion is a later explicit authority act, and a promoted rule
+still needs owner-authored behavioral qualification. Conversation
+review is therefore load-bearing evidence without becoming silent policy creation.
+
+Promotion thresholds are explicit:
+
+- an existing-rule nomination grounded in only one current source stays report-only until
+  external evidence or corroborating current sources establish a bounded review candidate;
+- a missing-rule hypothesis stays report-only until an operator explicitly promotes it and an
+  owner-authored probe/counter-probe suite qualifies the resulting directive; and
+- an escalation stays prose plus a report until an operator deliberately installs the named
+  enforcement surface and qualifies that enforcement within the consuming agent's limits.
+
+When Kindex is enabled and `kin` is installed, every configured search and requested
+node read is required. A failure aborts with `kindex_required_failed`; Meditate does not
+fall back to a weaker corpus while pretending it reviewed durable knowledge.
 
 ## Typed directive compilation
 
@@ -294,6 +367,9 @@ complete candidate bundle—on the named Claude or Codex consumer CLI. The consu
 sees only neutral scenarios with opaque case references and returns free-form
 ordered plans; action IDs, detector phrases, and required/forbidden/order assertions
 remain private local data. Bounded literal detectors score the plans after generation.
+Detector protocol v3 uses alphanumeric command boundaries and clause-local negation filtering,
+so `npm test` does not match inside `pnpm test` and a prohibition such as “do not run npm test”
+is not counted as an execution.
 The receipt binds the pre-execution suite hash, verifier prompt/schema/system-prompt
 hashes, agent/version, requested and resolved model, target hashes, plan hash,
 responses, and pass counts. Apply independently reconstructs and verifies it.
@@ -310,11 +386,42 @@ rules, and requires `OPENAI_API_KEY`, so the control cannot inherit global
 A pass proves only the recorded cases on the recorded consumer agent/version/model.
 It is not universal behavioral equivalence, and the planner cannot select the
 criteria on which it is graded. Missing coverage for any changed source directive
-fails. Unchanged plans need no semantic run. Unattended mutation additionally
+fails. Unchanged target bytes need no consumer-agent verification, but a fresh exact
+snapshot may still need its read-only semantic Analyst pass. Unattended mutation additionally
 requires the explicit config switch, probation history, and a structurally
 low-blast-radius plan; a verification receipt alone grants no ambient authority.
 
-### v0.2.0 live qualification receipts
+### v0.3.0 live semantic receipts
+
+- Restored Claude baseline run `20260819T200834Z-321749c4` found four semantic
+  nominations: two enforcement candidates, one missing rule, and one underspecified rule.
+  Local admission produced two mutable, one report-only, and one suggestion-only record.
+  The Drafter returned one report-only escalation and one missing-rule suggestion, yielding
+  `enforcement_candidates`; the 65-directive/10,703-byte target remained byte-identical at
+  SHA-256 `441fe6e9af0302329b753fa9138f6a5fc5c556637991bfec679700adea1acb76`.
+- Restored Codex baseline run `20260819T200912Z-ef9020d0` found five semantic nominations:
+  three underspecified, one wrong-scope, and one enforcement candidate. Three were mutable and
+  two report-only. The Drafter added unsupported force, so the run was `drafter_rejected`; the
+  33-directive/4,276-byte target remained byte-identical at SHA-256
+  `0dd415bb140f10fe95c70005e33ca523f1ed60419a79bbfeabdf9a31446c6b63`.
+- Both receipts used the cached Analyst result on an exact repeat and current Analyst prompt
+  v4/parser v5 plus Drafter prompt v16/parser v32. Neither changed a target or ran consumer-agent
+  verification. They demonstrate semantic nomination, report-only compilation, deterministic
+  rejection, and fixed target bytes—not behavioral equivalence.
+- A separate disposable package-manager fixture exercised the full semantic path. Claude plan
+  `20260819T204620Z-53e25b49` and Codex plan `20260819T204859Z-ab0a357e` each replaced an older
+  `npm` directive with a typed, evidence-grounded `pnpm` directive. Claude Code 2.1.224 with
+  `claude-sonnet-4-6` and Codex CLI 0.147.0 with `gpt-5.6-sol` each passed all three repeats of
+  two trigger probes plus one counter-probe. Verification SHAs were
+  `608c186ffa650fd7f6373c586811e926d299b48ca1da378b0ca4de5d29ee8c8c` and
+  `5aa093c94010685ecf9278eafe06b12fda5cc628f0019b5e8e4fc3182cc3f241`. Only the disposable
+  Codex-qualified plan was applied. Its target reached SHA-256
+  `838ce9afe2405bb6ff999dc64722cc89191ece65b35b786ab6dd2615e0135f2b`; repeat run
+  `20260819T205423Z-f3b11c4a` was byte-identical and reported `reviewed_noop` with the historical
+  nomination preserved for audit and zero confirmed unresolved defects. No real Claude or Codex
+  instruction file was changed.
+
+### Historical v0.2.0 live qualification receipts
 
 - The restored live Claude target (SHA-256
   `441fe6e9af0302329b753fa9138f6a5fc5c556637991bfec679700adea1acb76`)
@@ -345,9 +452,11 @@ low-blast-radius plan; a verification receipt alone grants no ambient authority.
   authorized attended apply to that disposable copy only. Second run
   `20260819T171954Z-d68b18c5` was a zero-call byte-identical no-op.
 
-These are bounded qualification receipts for six owner-authored Kindex behaviors
-on the named consumer versions and models. They are not a universal claim about
-all instructions or future model versions.
+The historical receipts are bounded qualification evidence for six owner-authored Kindex
+behaviors. The new disposable receipt qualifies only the three named package-manager cases.
+Together they support the fixed-point, semantic-compilation, and verifier mechanisms on the
+recorded consumers; they are not universal behavioral equivalence or a promise about future
+models.
 
 The five dispositions are:
 
@@ -421,7 +530,8 @@ hierarchy conflicts, and duplicates; [AgentLint](https://github.com/0xmariowu/Ag
 and [agentlinter.com](https://agentlinter.com/) describe static, AI, and
 session-aware checks and fixes; [Reporails](https://reporails.com/) offers local
 deterministic diagnostics and healing. Meditate's narrower distinction is total
-disposition of the configured directive set, temporal interaction evidence, and
+disposition of the configured directive set, semantic nomination from temporal
+interaction/Kindex evidence, typed report-only missing-rule hypotheses, and
 recoverable exact-hash apply—not a claim that these tools do nothing. “Total”
 means every configured pre-image record receives a disposition, not that every
 possible behavior is covered.
