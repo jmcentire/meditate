@@ -8,7 +8,14 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, compiled_directive, inspection, replace_matching
+from helpers import (
+    StageProvider,
+    StubProvider,
+    compiled_directive,
+    inspection,
+    no_semantic_nominations,
+    replace_matching,
+)
 
 import meditate.plan as plan_module
 from meditate.config import VerificationConfig
@@ -19,11 +26,48 @@ from meditate.transaction import apply_run
 from meditate.util import MeditateError, canonical_json_bytes, sha256_bytes
 from meditate.verification import (
     CliVerificationRunner,
+    SentinelCase,
+    _detected_actions,
     _evaluation_prompt,
     _response_schema,
     load_suite,
     verify_run,
 )
+
+
+def test_detector_phrases_respect_command_boundaries_and_negation() -> None:
+    case = SentinelCase(
+        id="package_runner",
+        description="Use the current package runner.",
+        prompt="Prepare a verified commit.",
+        allowed_actions=("run_npm_test", "run_pnpm_test"),
+        required_actions=("run_pnpm_test",),
+        forbidden_actions=("run_npm_test",),
+        ordered_actions=("run_pnpm_test",),
+        control_must_underperform=False,
+        covers=(),
+    )
+
+    detectors = {
+        "run_npm_test": ("npm test",),
+        "run_pnpm_test": ("pnpm test",),
+    }
+
+    actions = _detected_actions(
+        ("Run `pnpm test`, not `npm test`, before creating the commit.",),
+        case,
+        detectors,
+    )
+
+    assert actions == ["run_pnpm_test"]
+    assert (
+        _detected_actions(
+            ("This is review-only, so do not run `pnpm test` or `npm test`.",),
+            case,
+            detectors,
+        )
+        == []
+    )
 
 
 def _event(text: str) -> EvidenceEvent:
@@ -176,24 +220,22 @@ class DifferentialRunner:
         }
 
 
-def test_local_no_candidate_plan_skips_credentials_and_provider(
+def test_local_no_candidate_plan_runs_semantic_analysis_before_stable_noop(
     config_factory: ConfigFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, _targets = config_factory(("# Rules\n\n- Preserve hand edits.\n",))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    def forbidden_provider(_config: object) -> object:
-        raise AssertionError("no-candidate planning must not construct a provider")
-
-    monkeypatch.setattr(plan_module, "create_provider", forbidden_provider)
+    provider = StageProvider(no_semantic_nominations, lambda _packet: {})
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
     plan = create_plan(config, inspection=inspection(config, ()))
 
     assert plan.consolidation_preflight["status"] == "no_detectable_defects"
     assert plan.consolidation_preflight["outcome"] == "stable_noop"
-    assert plan.consolidation_preflight["provider_called"] is False
-    assert plan.usage.calls == 0
-    assert plan.model_id == "not-invoked"
+    assert plan.consolidation_preflight["provider_called"] is True
+    assert plan.usage.calls == 1
+    assert plan.model_id == provider.model
+    assert provider.analysis_calls == 1
+    assert provider.plan_calls == 0
     assert plan.semantic_verification["status"] == "not_applicable"
     assert plan.blocked_reasons == ()
 
@@ -232,7 +274,7 @@ def test_candidate_boundary_is_local_and_owner_suite_is_planner_blind(
                     "compiled_directive": compiled_directive("Preserve every exact hand edit."),
                     "destination_target": outside.target,
                     "heading_path": list(outside.heading_path),
-                    "evidence": [],
+                    "evidence_ids": [],
                     "reason": "Attempted unrelated rewrite.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -240,11 +282,12 @@ def test_candidate_boundary_is_local_and_owner_suite_is_planner_blind(
                     "deterministic_check": "",
                 }
             ],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
 
-    provider = StubProvider(outside_candidate)
+    provider = StageProvider(no_semantic_nominations, outside_candidate)
     monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
     before = (
         set((config.data_root / "runs").glob("*"))
@@ -254,16 +297,18 @@ def test_candidate_boundary_is_local_and_owner_suite_is_planner_blind(
     with pytest.raises(MeditateError) as caught:
         create_plan(config, inspection=inspected)
     assert caught.value.code == "outside_consolidation_candidate"
-    assert provider.last_packet is not None
-    assert len(provider.last_packet["consolidation_candidates"]) == 1
-    assert len(provider.last_packet["consolidation_candidates"][0]["source_ids"]) == 4
+    assert provider.last_plan_packet is not None
+    assert len(provider.last_plan_packet["consolidation_candidates"]) == 1
+    assert len(provider.last_plan_packet["consolidation_candidates"][0]["source_ids"]) == 4
     assert all(
         directive["id"] != outside.id
-        for target in provider.last_packet["targets"]
+        for target in provider.last_plan_packet["targets"]
         for directive in target["directives"]
     )
-    assert provider.last_packet["consolidation_preflight"]["method"] == ("deterministic_defects_v4")
-    assert marker not in json.dumps(provider.last_packet, sort_keys=True)
+    assert provider.last_plan_packet["consolidation_preflight"]["method"] == (
+        "deterministic_defects_v4"
+    )
+    assert marker not in json.dumps(provider.last_plan_packet, sort_keys=True)
     after = (
         set((config.data_root / "runs").glob("*"))
         if (config.data_root / "runs").exists()
@@ -301,7 +346,7 @@ def test_passed_owner_suite_binds_plan_targets_runner_and_all_repeats(
     assert artifact_bytes == canonical_json_bytes(artifact)
     assert artifact["planner_visibility"] == "excluded"
     assert artifact["consumer_visible_assertions"] == "excluded"
-    assert artifact["verification_prompt_version"] == "2"
+    assert artifact["verification_prompt_version"] == "3"
     assert len(artifact["evaluation_prompt_sha256"]) == 64
     assert len(artifact["response_schema_sha256"]) == 64
     assert set(artifact["condition_system_prompt_sha256"]) == {"control", "pre", "post"}
@@ -550,7 +595,7 @@ def _duplicate_resolution(packet: dict[str, Any], *, drop_anchor: bool = False) 
                 ),
                 "destination_target": mutable[0]["target"],
                 "heading_path": mutable[0]["heading_path"],
-                "evidence": [],
+                "evidence_ids": [],
                 "reason": "Resolve the exact_duplicate defect while preserving its command.",
                 "minimum_apply_mode": "attended",
                 "relocation_basis": "",
@@ -558,6 +603,7 @@ def _duplicate_resolution(packet: dict[str, Any], *, drop_anchor: bool = False) 
                 "deterministic_check": "",
             }
         ],
+        "new_rule_suggestions": [],
         "decision_request": None,
         "unresolved_conflicts": [],
     }
@@ -570,7 +616,7 @@ def test_defective_fixture_corrects_once_then_reaches_byte_identical_fixed_point
 ) -> None:
     original = "# Tests\n\n- MUST run `pytest` before commit.\n- MUST run `pytest` before commit.\n"
     config, (target,) = config_factory((original,), target_names=("CLAUDE.md",))
-    provider = StubProvider(_duplicate_resolution)
+    provider = StageProvider(no_semantic_nominations, _duplicate_resolution)
     monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
 
     first = create_plan(config, inspection=inspection(config, ()))
@@ -603,17 +649,14 @@ def test_defective_fixture_corrects_once_then_reaches_byte_identical_fixed_point
     after_first = target.read_bytes()
     assert after_first != original.encode("utf-8")
 
-    monkeypatch.setattr(
-        plan_module,
-        "create_provider",
-        lambda _config: (_ for _ in ()).throw(
-            AssertionError("the fixed point must not construct a provider")
-        ),
-    )
+    fixed_provider = StageProvider(no_semantic_nominations, lambda _packet: {})
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: fixed_provider)
     second = create_plan(config, inspection=inspection(config, ()))
     assert second.changed_directive_count == 0
     assert second.consolidation_preflight["outcome"] == "stable_noop"
-    assert second.usage.calls == 0
+    assert second.usage.calls == 1
+    assert fixed_provider.analysis_calls == 1
+    assert fixed_provider.plan_calls == 0
     assert target.read_bytes() == after_first
 
 
@@ -627,21 +670,18 @@ def test_well_formed_fixture_is_stable_for_ten_iterations(
         "MAY skip it when no Python behavior changed, and report that reason.\n"
     )
     config, (target,) = config_factory((well_formed,), target_names=("CLAUDE.md",))
-    monkeypatch.setattr(
-        plan_module,
-        "create_provider",
-        lambda _config: (_ for _ in ()).throw(
-            AssertionError("a stable fixture must never construct a provider")
-        ),
-    )
+    provider = StageProvider(no_semantic_nominations, lambda _packet: {})
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
     expected = target.read_bytes()
     for _iteration in range(10):
         plan = create_plan(config, inspection=inspection(config, ()))
         assert plan.changed_directive_count == 0
         assert plan.consolidation_preflight["status"] == "no_detectable_defects"
         assert plan.consolidation_preflight["outcome"] == "stable_noop"
-        assert plan.usage.calls == 0
+        assert plan.usage.calls == (1 if _iteration == 0 else 0)
         assert target.read_bytes() == expected
+    assert provider.analysis_calls == 1
+    assert provider.plan_calls == 0
 
 
 def test_source_only_resolution_cannot_drop_concrete_checkability_anchor(
@@ -649,13 +689,20 @@ def test_source_only_resolution_cannot_drop_concrete_checkability_anchor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original = "# Tests\n\n- MUST run `pytest` before commit.\n- MUST run `pytest` before commit.\n"
-    config, _targets = config_factory((original,), target_names=("CLAUDE.md",))
-    provider = StubProvider(lambda packet: _duplicate_resolution(packet, drop_anchor=True))
+    config, targets = config_factory((original,), target_names=("CLAUDE.md",))
+    provider = StageProvider(
+        no_semantic_nominations,
+        lambda packet: _duplicate_resolution(packet, drop_anchor=True),
+    )
     monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
-    with pytest.raises(MeditateError) as caught:
-        create_plan(config, inspection=inspection(config, ()))
-    assert caught.value.code == "checkability_regression"
-    assert not (config.data_root / "runs").exists()
+    plan = create_plan(config, inspection=inspection(config, ()))
+    assert plan.changed_directive_count == 0
+    assert plan.consolidation_preflight["outcome"] == "drafter_rejected"
+    assert plan.consolidation_preflight["draft_validation"] == {
+        "status": "rejected",
+        "code": "checkability_regression",
+    }
+    assert targets[0].read_text(encoding="utf-8") == original
 
 
 def _resolve_duplicate_candidates(
@@ -684,7 +731,7 @@ def _resolve_duplicate_candidates(
                 ),
                 "destination_target": source["target"],
                 "heading_path": source["heading_path"],
-                "evidence": [],
+                "evidence_ids": [],
                 "reason": "Resolve the exact duplicate without changing its rule.",
                 "minimum_apply_mode": "attended",
                 "relocation_basis": "",
@@ -696,6 +743,7 @@ def _resolve_duplicate_candidates(
         "schema_version": 1,
         "keep": sorted(set(directives) - selected_ids),
         "changes": changes,
+        "new_rule_suggestions": [],
         "decision_request": None,
         "unresolved_conflicts": [],
     }
@@ -715,11 +763,11 @@ def test_complete_defect_set_reaches_one_run_fixed_point(
         "- SHOULD update `README.md` when public behavior changes.\n"
     )
     config, (target,) = config_factory((original,), target_names=("CLAUDE.md",))
-    provider = StubProvider(_resolve_duplicate_candidates)
+    provider = StageProvider(no_semantic_nominations, _resolve_duplicate_candidates)
     monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
 
     first = create_plan(config, inspection=inspection(config, ()))
-    assert len(provider.last_packet["consolidation_candidates"]) == 2  # type: ignore[index]
+    assert len(provider.last_plan_packet["consolidation_candidates"]) == 2  # type: ignore[index]
     assert len(first.raw_plan["changes"]) == 2
     assert first.changed_directive_count == 4
     assert first.raw_plan["post_consolidation_preflight"]["status"] == ("no_detectable_defects")
@@ -738,16 +786,13 @@ def test_complete_defect_set_reaches_one_run_fixed_point(
     apply_run(config, first.run_id, mode="attended", approval_sha256=first.plan_sha256)
     fixed_point = target.read_bytes()
 
-    monkeypatch.setattr(
-        plan_module,
-        "create_provider",
-        lambda _config: (_ for _ in ()).throw(
-            AssertionError("a complete fixed point must not construct a provider")
-        ),
-    )
+    fixed_provider = StageProvider(no_semantic_nominations, lambda _packet: {})
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: fixed_provider)
     second = create_plan(config, inspection=inspection(config, ()))
     assert second.consolidation_preflight["outcome"] == "stable_noop"
-    assert second.usage.calls == 0
+    assert second.usage.calls == 1
+    assert fixed_provider.analysis_calls == 1
+    assert fixed_provider.plan_calls == 0
     assert target.read_bytes() == fixed_point
 
 
@@ -759,14 +804,21 @@ def test_partial_defect_resolution_is_rejected_as_non_idempotent(
         "# Tests\n\n- MUST run `pytest`.\n- MUST run `pytest`.\n\n"
         "# Docs\n\n- SHOULD update `README.md`.\n- SHOULD update `README.md`.\n"
     )
-    config, _targets = config_factory((original,), target_names=("CLAUDE.md",))
-    provider = StubProvider(lambda packet: _resolve_duplicate_candidates(packet, resolve_count=1))
+    config, targets = config_factory((original,), target_names=("CLAUDE.md",))
+    provider = StageProvider(
+        no_semantic_nominations,
+        lambda packet: _resolve_duplicate_candidates(packet, resolve_count=1),
+    )
     monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
 
-    with pytest.raises(MeditateError) as caught:
-        create_plan(config, inspection=inspection(config, ()))
-    assert caught.value.code == "non_idempotent_proposal"
-    assert not (config.data_root / "runs").exists()
+    plan = create_plan(config, inspection=inspection(config, ()))
+    assert plan.changed_directive_count == 0
+    assert plan.consolidation_preflight["outcome"] == "drafter_rejected"
+    assert plan.consolidation_preflight["draft_validation"] == {
+        "status": "rejected",
+        "code": "non_idempotent_proposal",
+    }
+    assert targets[0].read_text(encoding="utf-8") == original
 
 
 def test_provider_schema_requires_typed_compiled_directive_not_free_prose() -> None:

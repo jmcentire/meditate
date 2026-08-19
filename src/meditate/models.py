@@ -239,9 +239,11 @@ class ValidatedPlan:
     prompt_version: str = ""
     prompt_sha256: str = ""
     semantic_verification: dict[str, str] = field(default_factory=dict)
+    semantic_analysis: dict[str, Any] = field(default_factory=dict)
     consolidation_preflight: dict[str, Any] = field(default_factory=dict)
     post_directive_count: int = 0
     escalated_directive_count: int = 0
+    new_rule_suggestion_count: int = 0
     metrics: dict[str, Any] = field(default_factory=dict)
     import_graph_before: dict[str, Any] = field(default_factory=dict)
     import_graph_after: dict[str, Any] = field(default_factory=dict)

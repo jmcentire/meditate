@@ -18,7 +18,7 @@ from helpers import (
 
 from meditate.cli import main
 from meditate.models import Authority, EvidenceEvent, RunUsage
-from meditate.plan import SYSTEM_PROMPT, create_plan
+from meditate.plan import create_plan
 from meditate.provider import AnthropicProvider
 from meditate.report import write_plan_report
 from meditate.segment import segment_markdown
@@ -314,7 +314,7 @@ def test_compiled_rationales_may_grow_multiple_targets_as_reported_telemetry(
                     "compiled_directive": compiled_directive(replacements[index]),
                     "destination_target": target["target"],
                     "heading_path": source["heading_path"],
-                    "evidence": [{"id": event["id"], "quote": event["text"]}],
+                    "evidence_ids": [event["id"]],
                     "reason": "The cited rule replaces the prior reporting preference.",
                     "minimum_apply_mode": "attended",
                     "relocation_basis": "",
@@ -326,6 +326,7 @@ def test_compiled_rationales_may_grow_multiple_targets_as_reported_telemetry(
             "schema_version": 1,
             "keep": [],
             "changes": changes,
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -421,13 +422,15 @@ def test_cli_plan_json_exposes_metrics_and_configured_target_coverage(
         payload: str,
         schema: dict[str, Any],
     ) -> tuple[str, RunUsage]:
-        assert system == SYSTEM_PROMPT
         packet = json.loads(payload)
-        return json.dumps(keep_all(packet)), RunUsage(
+        assert packet["stage"] == "semantic_analysis"
+        assert "read-only semantic Analyst" in system
+        return json.dumps({"schema_version": 1, "nominations": []}), RunUsage(
             calls=1,
             actual_input_tokens=1,
             actual_output_tokens=1,
             stop_reason="end_turn",
+            model_id="synthetic-analyst-model",
         )
 
     monkeypatch.setattr(AnthropicProvider, "complete", complete)

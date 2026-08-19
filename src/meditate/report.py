@@ -12,6 +12,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from .analyst import analysis_summary
 from .config import Config
 from .models import InspectionResult, ValidatedPlan
 from .plan import inspection_dict
@@ -139,6 +140,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
     md_path = root / f"{plan.run_id}.md"
     run_dir = config.data_root / "runs" / plan.run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    semantic_analysis_public = analysis_summary(plan.semantic_analysis)
     decision_response_argv: dict[str, list[str]] = {}
     if plan.decision_request:
         response_base = [
@@ -165,6 +167,8 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "prompt_version": plan.prompt_version,
         "prompt_sha256": plan.prompt_sha256,
         "semantic_verification": plan.semantic_verification,
+        "semantic_analysis": plan.semantic_analysis,
+        "semantic_analysis_summary": semantic_analysis_public,
         "consolidation_preflight": plan.consolidation_preflight,
         "decision_request": plan.decision_request,
         "operator_decision": plan.operator_decision,
@@ -182,6 +186,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "post_directives": plan.post_directive_count,
         "changed_directives": plan.changed_directive_count,
         "escalated_directives": plan.escalated_directive_count,
+        "new_rule_suggestions": plan.raw_plan.get("new_rule_suggestions", []),
         "directive_delta": plan.metrics.get("directive_delta", 0),
         "pre_bytes": plan.metrics.get("pre_bytes", 0),
         "post_bytes": plan.metrics.get("post_bytes", 0),
@@ -255,6 +260,15 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         f"- Directive delta: {plan.metrics.get('directive_delta', 0):+d}",
         f"- Changed directives: {plan.changed_directive_count}",
         f"- Escalated directives: {plan.escalated_directive_count}",
+        f"- Report-only new-rule hypotheses: {plan.new_rule_suggestion_count}",
+        (
+            "- Semantic Analyst: "
+            f"`{_safe_code(str(semantic_analysis_public.get('status', 'not_run')))}`; "
+            f"nominations {semantic_analysis_public.get('nominations', 0)}; "
+            f"rejected {semantic_analysis_public.get('rejected_nominations', 0)}; "
+            f"cache hit {str(semantic_analysis_public.get('cache_hit', False)).lower()}; "
+            f"authority `nomination_only`"
+        ),
         f"- Byte telemetry — pre: {plan.metrics.get('pre_bytes', 0)}",
         f"- Byte telemetry — post: {plan.metrics.get('post_bytes', 0)}",
         f"- Byte telemetry — delta: {plan.metrics.get('byte_delta', 0):+d}",
@@ -288,6 +302,126 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "",
         _safe_markdown(str(plan.raw_plan.get("summary", ""))),
     ]
+    nominations = plan.semantic_analysis.get("nominations", [])
+    rejected_nominations = plan.semantic_analysis.get("rejections", [])
+    if isinstance(rejected_nominations, list) and rejected_nominations:
+        rejection_codes = sorted(
+            str(item.get("code", "unknown"))
+            for item in rejected_nominations
+            if isinstance(item, dict)
+        )
+        sections.extend(
+            [
+                "",
+                "## Rejected semantic nominations",
+                "",
+                f"Local validation rejected {len(rejected_nominations)} nomination(s) before "
+                "they could influence a plan. Rejection codes: "
+                + ", ".join(f"`{_safe_code(code)}`" for code in rejection_codes)
+                + ". Model text is not repeated here.",
+            ]
+        )
+    if isinstance(nominations, list) and nominations:
+        admission_labels = {
+            "mutable_candidate": (
+                "eligible for the bounded Drafter because every cited directive shares one "
+                "exact target and heading"
+            ),
+            "reported_only": (
+                "report only because the hypothesis crosses a target or heading boundary"
+            ),
+            "suggestion_candidate": (
+                "missing-behavior hypothesis eligible only for a report-only draft"
+            ),
+        }
+        sections.extend(
+            [
+                "",
+                "## Semantic Analyst nominations",
+                "",
+                "These are evidence-grounded hypotheses, not proven defects, directives, or write "
+                "authority. Local validation checks identity, citations, scope shape, and "
+                "admission; "
+                "it does not prove the Analyst's semantic judgment.",
+            ]
+        )
+        for nomination in nominations:
+            if not isinstance(nomination, dict):
+                continue
+            admission = str(nomination.get("admission", ""))
+            sections.extend(
+                [
+                    "",
+                    f"### `{_safe_code(str(nomination.get('id', '')))}`",
+                    "",
+                    f"- Class: `{_safe_code(str(nomination.get('candidate_class', '')))}`",
+                    f"- Domain: `{_safe_code(str(nomination.get('domain', '')))}`",
+                    f"- Admission: `{_safe_code(admission)}` — "
+                    + _safe_markdown(admission_labels.get(admission, "unknown local state")),
+                    "- Source IDs: "
+                    + (
+                        ", ".join(f"`{item}`" for item in nomination.get("source_ids", []))
+                        or "none"
+                    ),
+                    "- Intent: " + _safe_markdown(str(nomination.get("behavioral_intent", ""))),
+                    "- Reason: " + _safe_markdown(str(nomination.get("reason", ""))),
+                    "- Applies when: " + _safe_markdown(str(nomination.get("applies_when", ""))),
+                    "- Does not apply when: "
+                    + _safe_markdown(str(nomination.get("does_not_apply_when", ""))),
+                    "- Evidence:",
+                ]
+            )
+            for citation in nomination.get("evidence", []):
+                if isinstance(citation, dict):
+                    sections.append(
+                        f"  - `{citation.get('id', '')}`: "
+                        + _safe_markdown(str(citation.get("quote", "")))
+                    )
+
+    suggestions = plan.raw_plan.get("new_rule_suggestions", [])
+    if isinstance(suggestions, list) and suggestions:
+        sections.extend(
+            [
+                "",
+                "## Report-only new-rule hypotheses",
+                "",
+                "These drafts are not included in proposed target bytes and cannot be applied. "
+                "Each derives from the named Analyst nomination and requires explicit promotion "
+                "plus independent behavioral qualification. Meditate v0.3 has no promotion "
+                "command: the operator must deliberately author or promote the rule after "
+                "supplying a hidden owner-authored probe/counter-probe suite.",
+            ]
+        )
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            compiled = suggestion.get("compiled_directive", {})
+            sections.extend(
+                [
+                    "",
+                    f"### `{_safe_code(str(suggestion.get('nomination_id', '')))}`",
+                    "",
+                    "- Destination candidate: `"
+                    + _safe_code(str(suggestion.get("destination_target", "")))
+                    + "`",
+                    "- Heading candidate: "
+                    + " / ".join(
+                        _safe_markdown(str(item)) for item in suggestion.get("heading_path", [])
+                    ),
+                    "- Normative keyword: "
+                    f"`{_safe_code(str(compiled.get('normative_keyword', '')))}`",
+                    f"- Rule: {_safe_markdown(str(compiled.get('rule', '')))}",
+                    f"- Reason: {_safe_markdown(str(compiled.get('reason', '')))}",
+                    f"- Scope: {_safe_markdown(str(compiled.get('scope', '')))}",
+                    "- Boundary example: "
+                    + (
+                        _safe_markdown(str(compiled.get("boundary_example", "")))
+                        if compiled.get("boundary_example")
+                        else "none"
+                    ),
+                    "- Write authority: `none`",
+                ]
+            )
     if plan.operator_decision:
         decision = plan.operator_decision
         collision_scope = decision.get("collision_scope", {})
@@ -486,6 +620,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             "prompt_version": plan.prompt_version,
             "prompt_sha256": plan.prompt_sha256,
             "semantic_verification": plan.semantic_verification,
+            "semantic_analysis": semantic_analysis_public,
             "consolidation_preflight": plan.consolidation_preflight,
             "parent_plan_sha256": plan.parent_plan_sha256,
             "parent_packet_sha256": plan.parent_packet_sha256,
@@ -497,6 +632,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             "pre_directives": plan.directive_count,
             "post_directives": plan.post_directive_count,
             "escalated_directives": plan.escalated_directive_count,
+            "new_rule_suggestions": plan.new_rule_suggestion_count,
             "directive_delta": plan.metrics.get("directive_delta", 0),
             "pre_bytes": plan.metrics.get("pre_bytes", 0),
             "post_bytes": plan.metrics.get("post_bytes", 0),

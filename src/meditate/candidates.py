@@ -278,6 +278,7 @@ def candidate_summary(clusters: tuple[CandidateCluster, ...]) -> dict[str, Any]:
     defect_classes = sorted({reason for item in clusters for reason in item.reason_codes})
     confirmed = [item for item in defect_classes if item == "exact_duplicate"]
     review = [item for item in defect_classes if item != "exact_duplicate"]
+    semantic = any(item.startswith("semantic_") for item in defect_classes)
     return {
         "status": (
             "defects_detected"
@@ -286,7 +287,11 @@ def candidate_summary(clusters: tuple[CandidateCluster, ...]) -> dict[str, Any]:
             if review
             else "no_detectable_defects"
         ),
-        "method": "deterministic_defects_v4",
+        "method": (
+            "deterministic_defects_v4+semantic_nominations_v2"
+            if semantic
+            else "deterministic_defects_v4"
+        ),
         "clusters": len(clusters),
         "directives": sum(len(item.source_ids) for item in clusters),
         "pre_bytes": sum(item.pre_bytes for item in clusters),

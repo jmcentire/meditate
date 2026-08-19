@@ -9,11 +9,20 @@ import secrets
 import shutil
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
+from .analyst import (
+    ANALYST_PARSER_VERSION,
+    ANALYST_PROMPT_VERSION,
+    AnalysisResult,
+    analysis_summary,
+    merge_candidate_clusters,
+    run_analysis,
+)
 from .candidates import CandidateCluster, candidate_summary, derive_candidate_clusters
 from .config import Config, resolve_codex_project_doc_max_bytes
 from .evidence import build_inspection
@@ -35,6 +44,7 @@ from .segment import is_claude_rules_target, load_targets, normalize_directive, 
 from .sources import collect_events
 from .util import (
     SCHEMA_VERSION,
+    MeditateError,
     atomic_write,
     atomic_write_json,
     canonical_json_bytes,
@@ -46,13 +56,31 @@ from .util import (
 )
 from .verification import VERIFICATION_METHOD
 
-PARSER_VERSION = "meditate-parser-v25"
-PLAN_PROMPT_VERSION = "10"
+PARSER_VERSION = "meditate-parser-v32"
+PLAN_PROMPT_VERSION = "16"
 TOKEN_ESTIMATOR = "utf8_bytes_upper_bound_v1"
 MAX_DECISION_DEPTH = 3
 MAX_DECISION_SUBJECT_CHARS = 400
 MAX_DECISION_LABEL_CHARS = 240
 MAX_DECISION_DETAIL_CHARS = 1_000
+_DRAFTER_REJECTION_CODES = frozenset(
+    {
+        "checkability_regression",
+        "directive_count_growth",
+        "dropped_explicit_action",
+        "excessive_churn",
+        "non_idempotent_proposal",
+        "repeated_replacement_phrase",
+        "retained_reversed_clause",
+        "size_ratio",
+        "ungrounded_operational_action",
+        "undefined_high_impact_gate",
+        "undefined_verification_gate",
+        "unsafe_precommit_ci_gate",
+        "unsupported_action_catch_all",
+        "unsupported_intensifier",
+    }
+)
 MAX_CUSTOM_DECISION_CHARS = 2_000
 SEMANTIC_VERIFICATION_METHOD = VERIFICATION_METHOD
 SEMANTIC_VERIFICATION = {
@@ -79,7 +107,10 @@ _EXTERNAL_VERIFICATION_CRITERION = re.compile(
 _HIGH_IMPACT_ACTIONS = frozenset({"deploy", "merge", "publish", "push", "release"})
 _QUALITY_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _REPEATED_PHRASE_WORDS = 8
+_MIN_EVIDENCE_QUOTE_CHARS = 12
+_MIN_EVIDENCE_QUOTE_TERMS = 2
 _NORMATIVE_KEYWORDS = frozenset({"MUST", "MUST NOT", "SHOULD", "SHOULD NOT", "MAY"})
+_EMBEDDED_NORMATIVE_KEYWORD = re.compile(r"\b(?:MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 _COMPILED_DIRECTIVE_KEYS = frozenset(
     {"normative_keyword", "rule", "reason", "scope", "boundary_example"}
 )
@@ -326,6 +357,7 @@ PLAN_SCHEMA: dict[str, Any] = {
         "schema_version",
         "keep",
         "changes",
+        "new_rule_suggestions",
         "unresolved_conflicts",
         "decision_request",
     ],
@@ -346,7 +378,7 @@ PLAN_SCHEMA: dict[str, Any] = {
                     "compiled_directive",
                     "destination_target",
                     "heading_path",
-                    "evidence",
+                    "evidence_ids",
                     "reason",
                     "minimum_apply_mode",
                     "enforcement_target",
@@ -385,18 +417,7 @@ PLAN_SCHEMA: dict[str, Any] = {
                     },
                     "destination_target": {"type": "string"},
                     "heading_path": {"type": "array", "items": {"type": "string"}},
-                    "evidence": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "required": ["id", "quote"],
-                            "properties": {
-                                "id": {"type": "string"},
-                                "quote": {"type": "string"},
-                            },
-                        },
-                    },
+                    "evidence_ids": {"type": "array", "items": {"type": "string"}},
                     "reason": {"type": "string"},
                     "minimum_apply_mode": {
                         "type": "string",
@@ -411,6 +432,47 @@ PLAN_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": ["", "contextual", "organization"],
                     },
+                },
+            },
+        },
+        "new_rule_suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "nomination_id",
+                    "compiled_directive",
+                    "destination_target",
+                    "heading_path",
+                    "reason",
+                ],
+                "properties": {
+                    "nomination_id": {"type": "string"},
+                    "compiled_directive": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "normative_keyword",
+                            "rule",
+                            "reason",
+                            "scope",
+                            "boundary_example",
+                        ],
+                        "properties": {
+                            "normative_keyword": {
+                                "type": "string",
+                                "enum": ["MUST", "MUST NOT", "SHOULD", "SHOULD NOT", "MAY"],
+                            },
+                            "rule": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "scope": {"type": "string"},
+                            "boundary_example": {"type": "string"},
+                        },
+                    },
+                    "destination_target": {"type": "string"},
+                    "heading_path": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
                 },
             },
         },
@@ -541,6 +603,20 @@ TASK:
   resolved independently without weakening its concrete triggers, commands, scope, reason, or
   observable outcomes, keep the whole candidate. The independent owner suite is not visible to
   you and evaluates the complete resulting instruction bundle later.
+- `semantic_analysis` is a separately validated, read-only Analyst artifact. Its nominations are
+  cited hypotheses, not established defects and not authority. Existing-rule nominations admitted
+  into `consolidation_candidates` may be dispositioned under the same boundaries as structural
+  candidates. Never assume the Analyst's class, domain, intent, or reason is correct merely because
+  it passed structural validation. For a change inside an admitted semantic candidate, leave
+  `evidence_ids` empty or cite only IDs already listed on that exact candidate; local code inherits
+  the candidate's complete evidence set and rejects unrelated IDs.
+- A semantic nomination with `admission=suggestion_candidate` may support one entry in
+  `new_rule_suggestions`. Draft a typed, specific, checkable directive only for that exact
+  missing-rule nomination. It is report-only: it has no source disposition, does not enter target
+  bytes, and cannot be applied. Copy `nomination_id` exactly from
+  `allowed_missing_rule_nomination_ids`; do not return evidence IDs for a suggestion. Local code
+  inherits the nomination's complete immutable evidence set. Use an exact configured destination.
+  Return no suggestion when the evidence does not justify durable wording.
 - Resolve scope before abstraction. If an apparent conflict is contextual, prefer relocating the
   specific directive into an exact configured path-scoped Claude rule before merging it. Never
   average separate contexts into vague global prose, and never invent a path glob.
@@ -636,6 +712,12 @@ OUTPUT CONTRACT:
   another exact configured value from `allowed_targets`.
 - For non-escalate changes, leave enforcement_target and deterministic_check empty. For
   non-relocations, leave relocation_basis empty.
+- `new_rule_suggestions` is separate from total disposition. Each entry must cite one known
+  missing-rule nomination and may draft only its stable behavioral intent. Suggestions are
+  candidate-only, confer no authority, never modify proposed target bytes, and require later
+  explicit promotion plus behavioral qualification before they can become instructions. Return
+  only an exact `nomination_id` from `allowed_missing_rule_nomination_ids`; Meditate inherits the
+  nomination's evidence locally.
 - For every semantic `replace`, return a `compiled_directive` with exactly five fields:
   `normative_keyword`, `rule`, `reason`, `scope`, and `boundary_example`. Use one of `MUST`,
   `MUST NOT`, `SHOULD`, `SHOULD NOT`, or `MAY` with its RFC 2119 meaning. Put the behavioral
@@ -650,7 +732,12 @@ OUTPUT CONTRACT:
 - Do not introduce open-ended action catch-alls such as "other applicable actions",
   "additional applicable actions", "and similar", "etc", or "and so on" unless that exact
   catch-all already appears in a source directive or an exact cited evidence quote.
-- Copy evidence quotes exactly from the sanitized event text. Do not paraphrase quotes.
+- For non-semantic changes and decision requests, return evidence IDs only, copied exactly from
+  `allowed_evidence_ids`. For an admitted semantic-candidate change, leave the array empty or use
+  only that candidate's IDs; Meditate inherits its complete bound set. Never retype evidence
+  quotes; local code materializes the exact sanitized event text and rejects records too small to
+  ground a change. New-rule suggestions do not return evidence IDs; their evidence is inherited
+  from the cited nomination.
 - For a `replace` that consolidates two or more directives inside one local candidate,
   the source directives are sufficient proposal evidence and `evidence` may be empty. This narrow
   source-only allowance does not apply to single-directive rewrites, remove, relocate, escalate,
@@ -659,7 +746,9 @@ OUTPUT CONTRACT:
 - Set minimum_apply_mode to attended for every change. Structural validation and evidence
   allowlisting do not establish behavioral equivalence.
 - Protected directives must be kept.
-- Do not add a directive without superseding at least one source ID. Directive count must not grow.
+- Do not add a directive to a proposed target without superseding at least one source ID.
+  Report-only `new_rule_suggestions` are not target additions. Proposed directive count must not
+  grow.
 - If authority or scope cannot be resolved, keep the affected directive and report the issue in
   unresolved_conflicts. Never guess.
 - A model-authored recommendation is structurally grounded but not semantically verified. Never
@@ -855,19 +944,30 @@ def _packet(
     config: Config,
     *,
     restrict_to_candidates: bool = False,
+    candidate_clusters: tuple[CandidateCluster, ...] | None = None,
+    semantic_analysis: dict[str, Any] | None = None,
+    required_event_ids: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, Any], bytes, dict[str, Any], int, tuple[str, ...]]:
     selected = list(inspection.selected_events)
     full_target_data = _sanitized_directives(inspection.targets, config)
     imported_data = _sanitized_imports(inspection)
-    candidate_clusters = derive_candidate_clusters(inspection)
+    chosen_candidates = (
+        derive_candidate_clusters(inspection) if candidate_clusters is None else candidate_clusters
+    )
     if restrict_to_candidates:
         target_data, dependency_context, preflight = _candidate_scoped_targets(
-            full_target_data, candidate_clusters
+            full_target_data, chosen_candidates
         )
     else:
         target_data = full_target_data
         dependency_context = []
-        preflight = candidate_summary(candidate_clusters)
+        preflight = candidate_summary(chosen_candidates)
+    known_event_ids = {event.id for event in selected}
+    if not required_event_ids.issubset(known_event_ids):
+        fail(
+            "semantic_evidence_drift",
+            "Semantic nominations cite evidence outside the frozen selected event set",
+        )
     dropped: list[str] = []
     while True:
         selected_sorted = sorted(selected, key=lambda item: (item.timestamp, item.id))
@@ -892,10 +992,36 @@ def _packet(
                     "evidence_id",
                 ],
             },
+            "allowed_source_ids": sorted(
+                str(directive["id"])
+                for target in target_data
+                for directive in target.get("directives", [])
+                if isinstance(directive, dict) and isinstance(directive.get("id"), str)
+            ),
+            "allowed_evidence_ids": [event.id for event in selected_sorted],
+            "allowed_missing_rule_nomination_ids": sorted(
+                str(item["id"])
+                for item in (
+                    semantic_analysis.get("nominations", [])
+                    if isinstance(semantic_analysis, dict)
+                    else []
+                )
+                if isinstance(item, dict)
+                and isinstance(item.get("id"), str)
+                and item.get("candidate_class") == "missing_rule"
+                and item.get("admission") == "suggestion_candidate"
+            ),
             "allowed_targets": [target.logical_path for target in inspection.targets],
             "targets": target_data,
             "consolidation_preflight": preflight,
-            "consolidation_candidates": [item.to_dict() for item in candidate_clusters],
+            "consolidation_candidates": [item.to_dict() for item in chosen_candidates],
+            "semantic_analysis": deepcopy(semantic_analysis)
+            if semantic_analysis is not None
+            else {
+                "status": "not_run",
+                "authority": "nomination_only",
+                "nominations": [],
+            },
             "dependency_context": dependency_context,
             "import_graph": inspection.import_graph.public_dict(),
             "imported_documents": imported_data,
@@ -927,7 +1053,14 @@ def _packet(
                 "Instruction targets alone require upper-bound "
                 f"{estimate} tokens, limit is {limit}",
             )
-        victim = min(selected, key=_event_rank)
+        removable = [event for event in selected if event.id not in required_event_ids]
+        if not removable:
+            fail(
+                "input_budget_exceeded",
+                "Required semantic evidence and instruction targets exceed the configured input "
+                "budget",
+            )
+        victim = min(removable, key=_event_rank)
         selected.remove(victim)
         dropped.append(victim.id)
 
@@ -968,6 +1101,7 @@ class _LocalNoCandidateProvider:
             "schema_version": SCHEMA_VERSION,
             "keep": keep,
             "changes": [],
+            "new_rule_suggestions": [],
             "decision_request": None,
             "unresolved_conflicts": [],
         }
@@ -1029,6 +1163,21 @@ def _repeated_normalized_phrase(text: str) -> str | None:
             return " ".join(phrase)
         seen.add(phrase)
     return None
+
+
+def _substantive_evidence_quote(value: Any, event_text: str) -> TypeGuard[str]:
+    """Require an exact, non-trivial excerpt rather than a token-sized citation."""
+
+    if not isinstance(value, str) or value not in event_text:
+        return False
+    terms = {
+        term.casefold()
+        for term in _QUALITY_WORD.findall(normalize_directive(value))
+        if len(term) >= 3
+    }
+    return len(value.strip()) >= _MIN_EVIDENCE_QUOTE_CHARS and len(terms) >= (
+        _MIN_EVIDENCE_QUOTE_TERMS
+    )
 
 
 def _action_catch_alls(text: str) -> set[str]:
@@ -1111,12 +1260,10 @@ def _compiled_replacement(
                 f"Change {index} compiled_directive.{field} must not be empty",
             )
     rule = normalized["rule"]
-    if rule.startswith(("#", "-", "+", "*")) or any(
-        rule == candidate or rule.startswith(candidate + " ") for candidate in _NORMATIVE_KEYWORDS
-    ):
+    if rule.startswith(("#", "-", "+", "*")) or _EMBEDDED_NORMATIVE_KEYWORD.search(rule):
         fail(
             "invalid_compiled_directive",
-            f"Change {index} rule must omit Markdown markers and the normative keyword",
+            f"Change {index} rule must omit Markdown markers and normative keywords",
         )
 
     lines = [
@@ -1459,6 +1606,151 @@ def _normalize_decision_request(
     }
 
 
+def _normalize_new_rule_suggestions(
+    value: Any,
+    *,
+    semantic_analysis: dict[str, Any] | None,
+    events: dict[str, EvidenceEvent],
+    allowed_targets: set[str],
+) -> list[dict[str, Any]]:
+    """Validate report-only drafts for admitted missing-rule hypotheses."""
+
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        fail("invalid_new_rule_suggestion", "new_rule_suggestions must be an array of objects")
+    raw_nominations = (
+        semantic_analysis.get("nominations", []) if isinstance(semantic_analysis, dict) else []
+    )
+    nominations = {
+        item.get("id"): item
+        for item in raw_nominations
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+        and item.get("candidate_class") == "missing_rule"
+        and item.get("admission") == "suggestion_candidate"
+    }
+    expected_fields = set(PLAN_SCHEMA["properties"]["new_rule_suggestions"]["items"]["properties"])
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, suggestion in enumerate(value):
+        if set(suggestion) != expected_fields:
+            fail("plan_schema", f"New-rule suggestion {index} has invalid fields")
+        nomination_id = suggestion.get("nomination_id")
+        if not isinstance(nomination_id, str) or nomination_id not in nominations:
+            fail(
+                "unknown_missing_rule_nomination",
+                f"New-rule suggestion {index} cites an unknown admitted nomination",
+            )
+        if nomination_id in seen:
+            fail(
+                "duplicate_new_rule_suggestion",
+                f"Missing-rule nomination appears more than once: {nomination_id}",
+            )
+        seen.add(nomination_id)
+        destination = suggestion.get("destination_target")
+        if not isinstance(destination, str) or destination not in allowed_targets:
+            fail(
+                "target_not_allowlisted",
+                f"New-rule suggestion {index} destination is not an exact configured target",
+            )
+        heading_path = suggestion.get("heading_path")
+        if not isinstance(heading_path, list) or not all(
+            isinstance(item, str)
+            and item.strip()
+            and not any(character in item for character in ("\r", "\n", "\x00"))
+            for item in heading_path
+        ):
+            fail(
+                "invalid_heading_path",
+                f"New-rule suggestion {index} has an unsafe heading path",
+            )
+        compiled, rendered = _compiled_replacement(
+            suggestion.get("compiled_directive"), action="replace", index=index
+        )
+        if _repeated_normalized_phrase(rendered) is not None:
+            fail(
+                "repeated_replacement_phrase",
+                f"New-rule suggestion {index} repeats an eight-word normalized phrase",
+            )
+        raw_evidence_ids = nominations[nomination_id].get("evidence_ids")
+        if (
+            not isinstance(raw_evidence_ids, list)
+            or not raw_evidence_ids
+            or not all(isinstance(item, str) for item in raw_evidence_ids)
+            or len(set(raw_evidence_ids)) != len(raw_evidence_ids)
+        ):
+            fail(
+                "semantic_evidence_drift",
+                f"Missing-rule nomination {nomination_id!r} has invalid bound evidence",
+            )
+        citations: list[dict[str, str]] = []
+        for evidence_id in raw_evidence_ids:
+            if evidence_id not in events:
+                fail(
+                    "semantic_evidence_drift",
+                    f"Missing-rule nomination {nomination_id!r} cites unavailable evidence",
+                )
+            quote = events[evidence_id].text
+            if not _substantive_evidence_quote(quote, quote):
+                fail(
+                    "semantic_evidence_drift",
+                    f"Missing-rule nomination {nomination_id!r} lost substantive evidence",
+                )
+            citations.append({"id": evidence_id, "quote": quote})
+        reason = suggestion.get("reason")
+        if (
+            not isinstance(reason, str)
+            or not reason.strip()
+            or len(reason) > 2_000
+            or any(character in reason for character in ("\r", "\n", "\x00"))
+        ):
+            fail("missing_reason", f"New-rule suggestion {index} needs a safe single-line reason")
+        if surviving_high_confidence(reason) or surviving_high_confidence(rendered):
+            fail("secret_in_proposal", f"New-rule suggestion {index} contains a secret shape")
+
+        evidence_support = "\n".join(item["quote"] for item in citations)
+        evidence_actions = {
+            item.casefold() for item in _OPERATIONAL_ACTIONS.findall(evidence_support)
+        }
+        suggested_actions = {item.casefold() for item in _OPERATIONAL_ACTIONS.findall(rendered)}
+        unsupported_actions = suggested_actions - evidence_actions
+        if unsupported_actions:
+            fail(
+                "ungrounded_operational_action",
+                f"New-rule suggestion {index} adds uncited actions: "
+                + ", ".join(sorted(unsupported_actions)),
+            )
+        unsupported_catch_alls = _action_catch_alls(rendered) - _action_catch_alls(evidence_support)
+        if unsupported_catch_alls:
+            fail(
+                "unsupported_action_catch_all",
+                f"New-rule suggestion {index} adds an uncited catch-all",
+            )
+        keyword = compiled["normative_keyword"]
+        if keyword in {"MUST", "MUST NOT"} and not re.search(
+            r"(?i)\b(?:always|must|never|required?|invariant)\b", evidence_support
+        ):
+            fail(
+                "unsupported_normative_force",
+                f"New-rule suggestion {index} escalates evidence to an invariant",
+            )
+        normalized.append(
+            {
+                "nomination_id": nomination_id,
+                "compiled_directive": compiled,
+                "rendered_directive": rendered,
+                "destination_target": destination,
+                "heading_path": heading_path,
+                "evidence": citations,
+                "reason": reason.strip(),
+                "candidate_only": True,
+                "write_authority": "none",
+                "promotion_required": True,
+                "behavioral_qualification_required": True,
+            }
+        )
+    return normalized
+
+
 def _validate_and_render(
     raw: dict[str, Any],
     inspection: InspectionResult,
@@ -1467,6 +1759,7 @@ def _validate_and_render(
     *,
     prior_conflict_fingerprints: set[str] | None = None,
     candidate_clusters: Any = None,
+    semantic_analysis: dict[str, Any] | None = None,
     enforce_candidate_boundary: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str], ApplyMode, tuple[str, ...], int, int]:
     expected_fields = set(PLAN_SCHEMA["properties"])
@@ -1479,6 +1772,7 @@ def _validate_and_render(
         fail("plan_schema", f"Model plan must use schema_version {SCHEMA_VERSION}")
     keep = raw.get("keep")
     changes = raw.get("changes")
+    new_rule_suggestions = raw.get("new_rule_suggestions")
     conflicts = raw.get("unresolved_conflicts")
     decision_request = raw.get("decision_request")
     if "decision_request" not in raw:
@@ -1487,6 +1781,8 @@ def _validate_and_render(
         fail("plan_keep", "keep must be an array of directive IDs")
     if not isinstance(changes, list) or not all(isinstance(item, dict) for item in changes):
         fail("plan_changes", "changes must be an array of objects")
+    if not isinstance(new_rule_suggestions, list):
+        fail("invalid_new_rule_suggestion", "new_rule_suggestions must be an array")
     if not isinstance(conflicts, list):
         fail("plan_conflicts", "unresolved_conflicts must be an array")
 
@@ -1689,7 +1985,45 @@ def _validate_and_render(
                 f"Non-relocation change {index} must leave relocation_basis empty",
             )
 
-        citations = change.get("evidence")
+        citations = change.get("evidence_ids")
+        semantic_candidate_evidence: list[str] = []
+        if enforce_candidate_boundary and isinstance(citations, list):
+            source_set = set(source_ids)
+            for cluster in candidate_clusters or ():
+                if not isinstance(cluster, dict):
+                    continue
+                cluster_sources = cluster.get("source_ids")
+                reason_codes = cluster.get("reason_codes")
+                cluster_evidence = cluster.get("evidence_ids")
+                if not (
+                    isinstance(cluster_sources, list)
+                    and all(isinstance(item, str) for item in cluster_sources)
+                    and source_set.issubset(set(cluster_sources))
+                    and isinstance(reason_codes, list)
+                    and any(
+                        isinstance(reason, str) and reason.startswith("semantic_")
+                        for reason in reason_codes
+                    )
+                    and isinstance(cluster_evidence, list)
+                    and cluster_evidence
+                    and all(isinstance(item, str) for item in cluster_evidence)
+                    and len(set(cluster_evidence)) == len(cluster_evidence)
+                ):
+                    continue
+                semantic_candidate_evidence = list(cluster_evidence)
+                break
+        if semantic_candidate_evidence:
+            if not all(isinstance(item, str) for item in citations):
+                fail("unknown_evidence", f"Change {index} cites malformed evidence")
+            if len(set(citations)) != len(citations):
+                fail("duplicate_evidence", f"Change {index} repeats evidence")
+            unexpected = sorted(set(citations) - set(semantic_candidate_evidence))
+            if unexpected:
+                fail(
+                    "semantic_evidence_mismatch",
+                    f"Change {index} cites evidence outside its admitted semantic candidate",
+                )
+            citations = semantic_candidate_evidence
         source_only_consolidation = (
             enforce_candidate_boundary
             and action == "replace"
@@ -1699,16 +2033,20 @@ def _validate_and_render(
         if not isinstance(citations, list) or (not citations and not source_only_consolidation):
             fail("missing_evidence", f"Change {index} needs evidence")
         normalized_citations: list[dict[str, str]] = []
-        for citation in citations:
-            if not isinstance(citation, dict):
-                fail("invalid_evidence", f"Change {index} evidence must be objects")
-            event_id = citation.get("id")
-            quote = citation.get("quote")
+        cited_event_ids: set[str] = set()
+        for event_id in citations:
             if not isinstance(event_id, str) or event_id not in events:
                 fail("unknown_evidence", f"Change {index} cites unknown evidence: {event_id}")
-            if not isinstance(quote, str) or not quote or quote not in events[event_id].text:
-                fail("ungrounded_quote", f"Change {index} quote does not match {event_id}")
+            if event_id in cited_event_ids:
+                fail("duplicate_evidence", f"Change {index} repeats evidence: {event_id}")
+            quote = events[event_id].text
+            if not _substantive_evidence_quote(quote, quote):
+                fail(
+                    "insufficient_evidence_text",
+                    f"Change {index} cites an evidence record too small to ground",
+                )
             normalized_citations.append({"id": event_id, "quote": quote})
+            cited_event_ids.add(event_id)
         lineage_depth = 0
         if action == "escalate":
             cited_ids = {citation["id"] for citation in normalized_citations}
@@ -1953,6 +2291,13 @@ def _validate_and_render(
             )
         overall_mode = "attended"
 
+    normalized_new_rule_suggestions = _normalize_new_rule_suggestions(
+        new_rule_suggestions,
+        semantic_analysis=semantic_analysis,
+        events=events,
+        allowed_targets=allowed_targets,
+    )
+
     replacements: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
     appends: dict[str, list[tuple[list[str], str]]] = defaultdict(list)
     for change in normalized_changes:
@@ -2053,6 +2398,7 @@ def _validate_and_render(
         "schema_version": SCHEMA_VERSION,
         "keep": keep,
         "changes": normalized_changes,
+        "new_rule_suggestions": normalized_new_rule_suggestions,
         "unresolved_conflicts": normalized_conflicts,
         "decision_request": normalized_decision_request,
         "post_consolidation_preflight": post_preflight,
@@ -2217,6 +2563,11 @@ def _local_plan_summary(
         action_counts[action] += len(change["source_ids"])
     keep_count = len(operations.get("keep", []))
     conflict_count = len(operations.get("unresolved_conflicts", []))
+    suggestion_count = len(operations.get("new_rule_suggestions", []))
+    semantic_summary = preflight.get("semantic_analysis", {})
+    nomination_count = (
+        int(semantic_summary.get("nominations", 0)) if isinstance(semantic_summary, dict) else 0
+    )
     pre_directives = int(metrics["pre_directives"])
     post_directives = int(metrics["post_directives"])
     changed_directives = int(metrics["changed_directives"])
@@ -2237,6 +2588,8 @@ def _local_plan_summary(
         f"{action_counts['relocate']} relocate, {action_counts['escalate']} escalate. "
         f"Changed directives: {changed_directives}. "
         f"Escalated directives: {escalated_directives}. "
+        f"Semantic nominations: {nomination_count}. "
+        f"Report-only new-rule hypotheses: {suggestion_count}. "
         f"Byte telemetry: {pre_bytes} pre to {post_bytes} post ({byte_delta:+d}); "
         "byte delta is not an objective. "
         f"Unresolved conflicts: {conflict_count}."
@@ -2326,6 +2679,7 @@ def create_plan(
     config: Config,
     *,
     provider: Provider | None = None,
+    analyst_provider: Provider | None = None,
     inspection: InspectionResult | None = None,
     frozen_packet: dict[str, Any] | None = None,
     operator_decision: dict[str, Any] | None = None,
@@ -2339,8 +2693,28 @@ def create_plan(
     # spending a provider call. Every successful plan must be reloadable by the
     # verifier/apply path under the same canonical-path rule.
     _validate_run_root_path(config)
-    enforce_candidate_boundary = provider is None
+    enforce_candidate_boundary = provider is None or analyst_provider is not None
     result = inspection or inspect_state(config)
+    planning_result = result
+    semantic_analysis: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "stage": "semantic_analysis",
+        "status": "not_run",
+        "authority": "nomination_only",
+        "provider": "",
+        "requested_model": config.llm.model,
+        "model_id": "not-invoked",
+        "parser_version": ANALYST_PARSER_VERSION,
+        "prompt_version": ANALYST_PROMPT_VERSION,
+        "prompt_sha256": "",
+        "cache_hit": False,
+        "nominations": [],
+        "rejections": [],
+    }
+    analysis_result: AnalysisResult | None = None
+    analysis_usage = RunUsage(model_id="not-invoked")
+    shared_provider: Provider | None = None
+    drafter_rejection: dict[str, str] = {}
     lineage = decision_lineage or {
         "depth": 0,
         "resolved_request_ids": [],
@@ -2369,8 +2743,71 @@ def create_plan(
             or expected_model_id
         ):
             fail("invalid_decision_request", "A successor plan requires a frozen parent packet")
-        packet, packet_bytes, plan_schema, estimate, dropped = _packet(
-            result, config, restrict_to_candidates=enforce_candidate_boundary
+        candidate_clusters = derive_candidate_clusters(result)
+        if enforce_candidate_boundary:
+            (
+                analysis_packet,
+                _analysis_bytes,
+                _analysis_schema,
+                _analysis_estimate,
+                analysis_dropped,
+            ) = _packet(result, config, restrict_to_candidates=False)
+            analysis_event_ids = {
+                str(item["id"])
+                for item in analysis_packet.get("evidence_events_oldest_to_newest", [])
+                if isinstance(item, dict) and isinstance(item.get("id"), str)
+            }
+            planning_result = replace(
+                result,
+                selected_events=tuple(
+                    event for event in result.selected_events if event.id in analysis_event_ids
+                ),
+                overlaps=tuple(
+                    item
+                    for item in result.overlaps
+                    if item.get("evidence_id") in analysis_event_ids
+                ),
+            )
+            shared_provider = analyst_provider or provider or create_provider(config)
+            import_graph_before_analysis = result.import_graph.public_dict()
+            if build_import_graph(config).public_dict() != import_graph_before_analysis:
+                fail("import_graph_drift", "Claude import graph changed before semantic analysis")
+            analysis_result = run_analysis(
+                config,
+                planning_result,
+                analysis_packet,
+                provider=shared_provider,
+                dropped_evidence_ids=analysis_dropped,
+            )
+            semantic_analysis = analysis_result.artifact
+            analysis_usage = analysis_result.usage
+            candidate_clusters = merge_candidate_clusters(
+                planning_result,
+                candidate_clusters,
+                analysis_result.nominations,
+            )
+            if build_import_graph(config).public_dict() != import_graph_before_analysis:
+                fail("import_graph_drift", "Claude import graph changed during semantic analysis")
+        required_event_ids = frozenset(
+            evidence_id
+            for item in semantic_analysis.get("nominations", [])
+            if isinstance(item, dict)
+            for evidence_id in item.get("evidence_ids", [])
+            if isinstance(evidence_id, str)
+        )
+        packet, packet_bytes, plan_schema, estimate, plan_dropped = _packet(
+            planning_result,
+            config,
+            restrict_to_candidates=enforce_candidate_boundary,
+            candidate_clusters=candidate_clusters,
+            semantic_analysis=semantic_analysis,
+            required_event_ids=required_event_ids,
+        )
+        dropped = tuple(
+            sorted(
+                set(plan_dropped)
+                | set(analysis_result.dropped_evidence_ids if analysis_result else ())
+            )
         )
     else:
         if (
@@ -2381,6 +2818,9 @@ def create_plan(
         ):
             fail("invalid_decision_request", "A frozen packet requires bound operator authority")
         packet = deepcopy(frozen_packet)
+        frozen_analysis = packet.get("semantic_analysis")
+        if isinstance(frozen_analysis, dict):
+            semantic_analysis = deepcopy(frozen_analysis)
         decisions = packet.get("operator_decisions")
         if not isinstance(decisions, list) or not all(isinstance(item, dict) for item in decisions):
             fail("decision_context_drift", "Parent packet has invalid operator decision lineage")
@@ -2410,35 +2850,80 @@ def create_plan(
     enforce_current_candidate_boundary = enforce_candidate_boundary and (
         frozen_packet is None or bool(raw_candidates)
     )
+    missing_rule_candidates = [
+        item
+        for item in semantic_analysis.get("nominations", [])
+        if isinstance(item, dict) and item.get("admission") == "suggestion_candidate"
+    ]
     local_noop = (
         enforce_candidate_boundary
         and frozen_packet is None
         and isinstance(raw_candidates, list)
         and not raw_candidates
+        and not missing_rule_candidates
     )
     chosen_provider = (
         _LocalNoCandidateProvider(config.llm.model)
         if local_noop
-        else provider or create_provider(config)
+        else provider or shared_provider or create_provider(config)
     )
+    if analysis_usage.calls > config.llm.max_calls:
+        fail("call_budget_exceeded", "Semantic Analyst exceeded max_calls")
+    if analysis_usage.actual_input_tokens > config.llm.max_total_input_tokens:
+        fail("input_budget_exceeded", "Semantic Analyst exceeded the total input-token budget")
+    if analysis_usage.actual_output_tokens > config.llm.max_total_output_tokens:
+        fail("output_budget_exceeded", "Semantic Analyst exceeded the total output-token budget")
+    if not local_noop and analysis_usage.calls + 1 > config.llm.max_calls:
+        fail(
+            "call_budget_exceeded",
+            "No configured provider call remains for the consolidation Drafter",
+        )
+    if (
+        not local_noop
+        and analysis_usage.estimated_input_tokens + estimate > config.llm.max_total_input_tokens
+    ):
+        fail(
+            "input_budget_exceeded",
+            "Semantic Analyst plus Drafter upper-bound input exceeds the total input budget",
+        )
     import_graph_before = result.import_graph.public_dict()
     if build_import_graph(config).public_dict() != import_graph_before:
         fail("import_graph_drift", "Claude import graph changed before the provider call")
-    raw_text, usage = chosen_provider.complete(
+    raw_text, planner_usage = chosen_provider.complete(
         system=SYSTEM_PROMPT,
         payload=packet_bytes.decode("utf-8"),
         schema=plan_schema,
     )
-    usage.estimated_input_tokens = 0 if local_noop else estimate
+    planner_usage.estimated_input_tokens = 0 if local_noop else estimate
+    usage = RunUsage(
+        calls=analysis_usage.calls + planner_usage.calls,
+        estimated_input_tokens=(
+            analysis_usage.estimated_input_tokens + planner_usage.estimated_input_tokens
+        ),
+        actual_input_tokens=analysis_usage.actual_input_tokens + planner_usage.actual_input_tokens,
+        actual_output_tokens=(
+            analysis_usage.actual_output_tokens + planner_usage.actual_output_tokens
+        ),
+        stop_reason=";".join(
+            item for item in (analysis_usage.stop_reason, planner_usage.stop_reason) if item
+        ),
+    )
     if usage.calls > config.llm.max_calls:
         fail("call_budget_exceeded", "Provider exceeded max_calls")
     if usage.actual_input_tokens > config.llm.max_total_input_tokens:
         fail("input_budget_exceeded", "Provider-reported input tokens exceeded total budget")
     if usage.actual_output_tokens > config.llm.max_total_output_tokens:
         fail("output_budget_exceeded", "Provider-reported output tokens exceeded total budget")
-    model_id = usage.model_id or chosen_provider.model
+    planner_model_id = planner_usage.model_id or chosen_provider.model
+    model_id = (
+        planner_model_id
+        if planner_usage.calls
+        else analysis_result.model_id
+        if analysis_result is not None
+        else planner_model_id
+    )
     usage.model_id = model_id
-    if expected_model_id and model_id != expected_model_id:
+    if expected_model_id and planner_model_id != expected_model_id:
         fail(
             "decision_context_drift",
             "The provider resolved a different model ID than the one that asked the question",
@@ -2446,7 +2931,7 @@ def create_plan(
     observed_targets = load_targets(config)
     expected_target_state = [
         (target.logical_path, target.sha256, target.existed, target.mode)
-        for target in result.targets
+        for target in planning_result.targets
     ]
     observed_target_state = [
         (target.logical_path, target.sha256, target.existed, target.mode)
@@ -2484,22 +2969,61 @@ def create_plan(
         for event in packet["evidence_events_oldest_to_newest"]
         if isinstance(event, dict) and "id" in event
     }
-    (
-        normalized,
-        proposed,
-        minimum_mode,
-        blocked,
-        changed_count,
-        escalated_count,
-    ) = _validate_and_render(
-        parsed,
-        result,
-        config,
-        submitted_event_ids,
-        prior_conflict_fingerprints=set(conflict_fingerprints),
-        candidate_clusters=raw_candidates,
-        enforce_candidate_boundary=enforce_current_candidate_boundary,
-    )
+    try:
+        (
+            normalized,
+            proposed,
+            minimum_mode,
+            blocked,
+            changed_count,
+            escalated_count,
+        ) = _validate_and_render(
+            parsed,
+            planning_result,
+            config,
+            submitted_event_ids,
+            prior_conflict_fingerprints=set(conflict_fingerprints),
+            candidate_clusters=raw_candidates,
+            semantic_analysis=semantic_analysis,
+            enforce_candidate_boundary=enforce_current_candidate_boundary,
+        )
+    except MeditateError as exc:
+        if (
+            provider is not None
+            or not enforce_current_candidate_boundary
+            or exc.code not in _DRAFTER_REJECTION_CODES
+        ):
+            raise
+        drafter_rejection = {"status": "rejected", "code": exc.code}
+        fallback = {
+            "schema_version": SCHEMA_VERSION,
+            "keep": [
+                directive.id
+                for target in planning_result.targets
+                for directive in target.directives
+            ],
+            "changes": [],
+            "new_rule_suggestions": [],
+            "decision_request": None,
+            "unresolved_conflicts": [],
+        }
+        (
+            normalized,
+            proposed,
+            minimum_mode,
+            blocked,
+            changed_count,
+            escalated_count,
+        ) = _validate_and_render(
+            fallback,
+            planning_result,
+            config,
+            submitted_event_ids,
+            prior_conflict_fingerprints=set(conflict_fingerprints),
+            candidate_clusters=raw_candidates,
+            semantic_analysis=semantic_analysis,
+            enforce_candidate_boundary=enforce_current_candidate_boundary,
+        )
     if normalized.get("decision_request") is not None and lineage_depth >= MAX_DECISION_DEPTH:
         fail(
             "decision_depth_exceeded",
@@ -2562,6 +3086,8 @@ def create_plan(
         {
             "provider_called": usage.calls > 0,
             "estimated_input_tokens_avoided": estimate if local_noop else 0,
+            "semantic_analysis": analysis_summary(semantic_analysis),
+            "draft_validation": drafter_rejection or {"status": "accepted", "code": ""},
         }
     )
     detected_defects = list(preflight.get("defect_classes", []))
@@ -2569,16 +3095,40 @@ def create_plan(
     if not isinstance(post_preflight, dict):
         fail("invalid_candidate_boundary", "Post-consolidation preflight is malformed")
     remaining_defects = list(post_preflight.get("defect_classes", []))
-    resolved_defects = sorted(set(detected_defects) - set(remaining_defects))
-    unresolved_defects = sorted(set(detected_defects) & set(remaining_defects))
-    proposed_resolution = bool(normalized.get("changes"))
-    if not detected_defects:
+    confirmed_defects = set(preflight.get("confirmed_defect_classes", []))
+    review_candidates = set(preflight.get("review_candidate_classes", []))
+    resolved_defects = sorted(confirmed_defects - set(remaining_defects))
+    unresolved_defects = sorted(confirmed_defects & set(remaining_defects))
+    addressed_review_candidates = sorted(
+        review_candidates
+        & {
+            defect_class
+            for change in normalized.get("changes", [])
+            if isinstance(change, dict)
+            for defect_class in change.get("defect_classes", [])
+            if isinstance(defect_class, str)
+        }
+    )
+    unresolved_review_candidates = sorted(review_candidates - set(addressed_review_candidates))
+    proposed_resolution = changed_count > 0
+    nomination_count = len(semantic_analysis.get("nominations", []))
+    rejection_count = len(semantic_analysis.get("rejections", []))
+    suggestion_count = len(normalized.get("new_rule_suggestions", []))
+    preflight.update(
+        {
+            "review_candidates_addressed": addressed_review_candidates,
+            "review_candidates_unresolved": unresolved_review_candidates,
+            "new_rule_hypotheses": suggestion_count,
+            "enforcement_candidates": escalated_count,
+        }
+    )
+    if drafter_rejection:
         preflight.update(
             {
-                "status": "no_detectable_defects",
+                "status": "drafter_rejected",
                 "defects_resolved": [],
-                "defects_unresolved": [],
-                "outcome": "stable_noop",
+                "defects_unresolved": detected_defects,
+                "outcome": "drafter_rejected",
             }
         )
     elif proposed_resolution:
@@ -2588,6 +3138,76 @@ def create_plan(
                 "defects_resolved": resolved_defects,
                 "defects_unresolved": unresolved_defects,
                 "outcome": "candidate_requires_behavioral_qualification",
+            }
+        )
+    elif escalated_count:
+        preflight.update(
+            {
+                "status": "enforcement_candidates_reported",
+                "defects_resolved": [],
+                "defects_unresolved": detected_defects,
+                "outcome": "enforcement_candidates",
+            }
+        )
+    elif not detected_defects and not nomination_count and rejection_count:
+        preflight.update(
+            {
+                "status": "semantic_nominations_rejected",
+                "defects_resolved": [],
+                "defects_unresolved": [],
+                "outcome": "semantic_analysis_inconclusive",
+            }
+        )
+    elif not detected_defects and not nomination_count:
+        preflight.update(
+            {
+                "status": "no_detectable_defects",
+                "defects_resolved": [],
+                "defects_unresolved": [],
+                "outcome": "stable_noop",
+            }
+        )
+    elif detected_defects and not confirmed_defects:
+        # Review candidates are hypotheses, not established defects. A total
+        # keep disposition means the Drafter reviewed the bounded candidate and
+        # preserved the current directive. That is a successful reviewed no-op,
+        # not an unresolved defect. Keep the nomination in the immutable report
+        # so the operator can audit why the semantic stage ran.
+        preflight.update(
+            {
+                "status": "review_candidates_preserved",
+                "defects_resolved": [],
+                "defects_unresolved": [],
+                "review_candidates_preserved": sorted(review_candidates),
+                "review_candidates_unresolved": [],
+                "outcome": "reviewed_noop",
+            }
+        )
+    elif detected_defects:
+        preflight.update(
+            {
+                "status": "defects_detected_unresolved",
+                "defects_resolved": [],
+                "defects_unresolved": detected_defects,
+                "outcome": "reviewed_noop",
+            }
+        )
+    elif suggestion_count:
+        preflight.update(
+            {
+                "status": "new_rule_hypotheses_reported",
+                "defects_resolved": [],
+                "defects_unresolved": unresolved_defects,
+                "outcome": "new_rule_hypotheses",
+            }
+        )
+    elif nomination_count and not detected_defects:
+        preflight.update(
+            {
+                "status": "semantic_nominations_reported",
+                "defects_resolved": [],
+                "defects_unresolved": [],
+                "outcome": "semantic_review_required",
             }
         )
     else:
@@ -2609,6 +3229,9 @@ def create_plan(
     try:
         ensure_private_dir(run_dir / "blobs")
         ensure_private_dir(run_dir / "proposals")
+        analysis_bytes = canonical_json_bytes(semantic_analysis)
+        analysis_sha256 = sha256_bytes(analysis_bytes)
+        atomic_write(run_dir / "analysis.json", analysis_bytes)
         atomic_write(run_dir / "evidence.json", packet_bytes)
         targets_manifest: list[dict[str, Any]] = []
         for target in result.targets:
@@ -2647,16 +3270,34 @@ def create_plan(
             )
 
         created_at = _now()
+        recorded_provider = (
+            chosen_provider.name
+            if planner_usage.calls
+            else analysis_result.provider
+            if analysis_result is not None
+            else chosen_provider.name
+        )
+        recorded_model = (
+            chosen_provider.model
+            if planner_usage.calls
+            else analysis_result.requested_model
+            if analysis_result is not None
+            else chosen_provider.model
+        )
+        semantic_analysis_public = analysis_summary(semantic_analysis)
         plan_core = {
             "schema_version": SCHEMA_VERSION,
             "run_id": run_id,
             "created_at": created_at,
-            "provider": chosen_provider.name,
-            "model": chosen_provider.model,
+            "provider": recorded_provider,
+            "model": recorded_model,
             "model_id": model_id,
             "prompt_version": PLAN_PROMPT_VERSION,
             "prompt_sha256": prompt_sha256,
             "semantic_verification": semantic_verification,
+            "semantic_analysis": semantic_analysis,
+            "semantic_analysis_summary": semantic_analysis_public,
+            "semantic_analysis_sha256": analysis_sha256,
             "consolidation_preflight": preflight,
             "decision_request": normalized_decision_request,
             "operator_decision": operator_decision,
@@ -2688,12 +3329,14 @@ def create_plan(
             "packet_sha256": sha256_bytes(packet_bytes),
             "config_sha256": config.hash,
             "parser_version": PARSER_VERSION,
-            "provider": chosen_provider.name,
-            "model": chosen_provider.model,
+            "provider": recorded_provider,
+            "model": recorded_model,
             "model_id": model_id,
             "prompt_version": PLAN_PROMPT_VERSION,
             "prompt_sha256": prompt_sha256,
             "semantic_verification": semantic_verification,
+            "semantic_analysis_summary": semantic_analysis_public,
+            "semantic_analysis_sha256": analysis_sha256,
             "consolidation_preflight": preflight,
             "decision_request": normalized_decision_request,
             "operator_decision": operator_decision,
@@ -2730,8 +3373,8 @@ def create_plan(
     return ValidatedPlan(
         run_id=run_id,
         plan_sha256=plan_sha,
-        model=chosen_provider.model,
-        provider=chosen_provider.name,
+        model=recorded_model,
+        provider=recorded_provider,
         raw_plan=normalized,
         proposed_contents=proposed,
         proposed_hashes=proposed_hashes,
@@ -2744,9 +3387,11 @@ def create_plan(
         prompt_version=PLAN_PROMPT_VERSION,
         prompt_sha256=prompt_sha256,
         semantic_verification=semantic_verification,
+        semantic_analysis=semantic_analysis,
         consolidation_preflight=preflight,
         post_directive_count=int(aggregate_metrics["post_directives"]),
         escalated_directive_count=escalated_count,
+        new_rule_suggestion_count=len(normalized.get("new_rule_suggestions", [])),
         metrics=aggregate_metrics,
         import_graph_before=import_graph_before,
         import_graph_after=import_graph_after,

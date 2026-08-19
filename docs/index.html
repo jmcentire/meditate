@@ -45,15 +45,21 @@
       <div class="hero-orbit orbit-two" aria-hidden="true"></div>
       <div class="shell hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> v0.2.0 alpha · Stable fixed point · Consumer-agent verification</p>
+          <p class="eyebrow"><span class="status-dot"></span> v0.3.0 alpha · Semantic Analyst · Recoverable compilation</p>
           <h1>Rewrite the rule.<br><em>Not another exception.</em></h1>
           <p class="hero-lede"><strong>Authority before confidence.</strong> A fluent rewrite has no
             authority of its own; current instructions, explicit corrections, scope, and handoff
             boundaries come first.</p>
           <p class="hero-lede">
-            Meditate resolves identified defects in the behavioral directives Claude Code and
-            Codex load. A well-formed file is a successful byte-identical no-op. Changed plans
-            must survive a planner-blind owner suite before any target write.
+            Meditate is building toward a behavioral-contract compiler and policy router for the
+            directives Claude Code and Codex load. Version 0.3 establishes two separate production
+            boundaries: evidence-grounded semantic nomination, then bounded directive compilation
+            over only locally admitted candidates. It reviews current prose with temporal
+            interactions and Kindex—an optional local persistent knowledge graph exposed through
+            <code>kin</code>—for contradiction, supersession,
+            under/over-specification, wrong scope, enforcement candidates, and missing rules.
+            Missing rules remain report-only. A well-formed file is a byte-identical no-op.
+            Changed plans must survive a planner-blind owner suite before any target write.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="#start">Get started</a>
@@ -62,7 +68,7 @@
           <div class="hero-facts" aria-label="Project facts">
             <span>MIT licensed</span>
             <span>Dry-run by default</span>
-            <span>Attended apply only</span>
+            <span>Missing rules report-only</span>
             <span>No product telemetry</span>
           </div>
         </div>
@@ -75,14 +81,15 @@
           <pre><code><span class="comment"># Inventory stays entirely local</span>
 <span class="prompt">$</span> meditate inspect --json
 
-<span class="comment"># A stable file makes no provider call</span>
+<span class="comment"># Fresh input gets one read-only semantic pass</span>
 <span class="prompt">$</span> meditate plan \
     --model claude-sonnet-4-6 \
     --max-output-tokens 8192
 
 <span class="output">65 directives inspected</span>
-<span class="output">0 defects detected · stable_noop</span>
-<span class="output">0 model calls · 0 bytes changed</span>
+<span class="output">0 semantic nominations · stable_noop</span>
+<span class="output">1 Analyst call · 0 Drafter calls</span>
+<span class="output">exact repeat: cache hit · 0 model calls</span>
 <span class="safe">0 target files changed</span></code></pre>
         </div>
       </div>
@@ -238,23 +245,29 @@
           <article class="flow-step">
             <span>2</span>
             <h3>Preflight</h3>
-            <p>Detect confirmed exact duplicates and conservative review candidates. With none, return <code>stable_noop</code> without credentials or a model call.</p>
+            <p>Detect confirmed exact duplicates and conservative lexical review candidates without turning density or size into defects.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>3</span>
-            <h3>Compile</h3>
-            <p>Give one pinned planner only candidate directives and sanitized evidence. Render its typed RFC 2119 rule, reason, scope, and optional boundary locally.</p>
+            <h3>Analyze</h3>
+            <p>Run or replay a read-only semantic Analyst over the complete sanitized directives and temporal evidence. It nominates; local code admits.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>4</span>
+            <h3>Compile</h3>
+            <p>Give the pinned Drafter only admitted candidates and required evidence. Render typed RFC 2119 rule, reason, scope, and optional boundary locally.</p>
+          </article>
+          <div class="flow-arrow" aria-hidden="true">→</div>
+          <article class="flow-step">
+            <span>5</span>
             <h3>Verify</h3>
             <p>Run owner-authored probes against control, complete predecessor, and complete candidate bundles on the consuming Claude or Codex CLI.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
-            <span>5</span>
+            <span>6</span>
             <h3>Archive + apply</h3>
             <p>Bind the plan and passed verification receipt, archive pre/post images, enforce apply authority, write atomically, and keep restoration exact.</p>
           </article>
@@ -280,7 +293,8 @@
         <div class="boundary-note">
           <p class="boundary-title">The fixed point is stability, not shrinkage</p>
           <p>
-            Prompt v10 (SHA-256 <code>d277c05d...</code>)/parser v25 optimize defect
+            Analyst prompt v4 (SHA-256 <code>254f2afb...</code>)/parser v5 and Drafter
+            prompt v16 (SHA-256 <code>5f386309...</code>)/parser v32 optimize defect
             resolution in this order: correctness, checkability, scope precision, then concision.
             Byte counts are telemetry, never the
             objective. A justified rationale may make a directive larger. Removing a directive
@@ -296,8 +310,62 @@
           <p>
             Acceptance is executable: a well-formed fixture remains byte-identical, a defective
             fixture is corrected, both results survive a second invocation, ten iterations over
-            the well-formed fixture do not drift, and every confirmed cluster in a multi-defect
+            the well-formed fixture do not drift (the first analysis is cached and exact repeats
+            use no provider call), and every confirmed cluster in a multi-defect
             fixture must resolve in one successful plan.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">Conversation review is evidence, not silent policy creation</p>
+          <p>
+            The read-only Analyst may nominate <code>contradiction</code>,
+            <code>temporal_supersession</code>, <code>underspecified</code>,
+            <code>overspecified</code>, <code>wrong_scope</code>,
+            <code>enforcement_candidate</code>, and <code>missing_rule</code> in an explicit
+            semantic domain. Both model stages cite only exact allowed IDs; local code materializes
+            the exact sanitized evidence text. Every nomination states when the behavior applies
+            and does not apply. Local code rejects unknown IDs, evidence records shorter than 12
+            characters or two meaningful terms, unsupported temporal or enforcement claims, and
+            intent with fewer than three shared grounding terms.
+            Invalid nominations are counted independently; an all-rejected response is
+            <code>semantic_analysis_inconclusive</code>, never a clean no-op.
+          </p>
+          <p>
+            Same-heading existing-rule nominations may enter the bounded Drafter packet.
+            Local code inherits each admitted semantic candidate's complete evidence set and
+            rejects unrelated model-supplied IDs. A single-source semantic observation without
+            external evidence is report-only. Cross-scope findings remain report-only. Missing-rule drafts have
+            <code>write_authority=none</code>, never enter target bytes, cannot apply, and require
+            later explicit promotion plus owner-authored qualification. The Drafter returns only
+            an exact allowlisted nomination ID; local code inherits its immutable evidence set.
+            Version 0.3 has no promotion command. With Kindex enabled and
+            installed, every configured search and requested node read is required; failure is
+            <code>kindex_required_failed</code>.
+          </p>
+          <p>
+            Promotion thresholds are explicit. A one-source existing-rule observation remains
+            report-only until external evidence or corroborating current sources exist. A missing
+            rule requires explicit operator promotion plus an owner-authored probe/counter-probe
+            suite. An escalation requires deliberate enforcement installation plus qualification
+            against that consumer's actual interception limits.
+          </p>
+          <p>
+            Report-only hook/settings escalations produce <code>enforcement_candidates</code>.
+            Their prose stays byte-identical and the underlying defect remains unresolved until
+            enforcement is deliberately installed and qualified.
+          </p>
+          <p>
+            If admitted nominations reach the Drafter but its rewrite fails an explicitly
+            allowlisted semantic-quality gate, Meditate preserves every target byte and archives
+            a <code>drafter_rejected</code> receipt with the rejection code. Authority, schema,
+            secrecy, scope, candidate-boundary, and malformed top-level failures still abort;
+            safety checks are not loosened to make a draft pass.
+          </p>
+          <p>
+            When the Drafter deliberately keeps an admitted hypothesis, the result is
+            <code>review_candidates_preserved</code>/<code>reviewed_noop</code>: the nomination
+            remains auditable, but it is not mislabeled as a confirmed unresolved defect.
           </p>
         </div>
 
@@ -313,16 +381,49 @@
             case on every repeat, never regress below its predecessor on a case, and outperform
             each designated control. Predecessor misses remain visible as baseline gaps; candidate
             repairs remain visible as improvements. Codex runs in a fresh private
-            <code>CODEX_HOME</code>, ignores user config/rules, and requires
+            <code>CODEX_HOME</code>. Verifier protocol v3 uses alphanumeric detector boundaries
+            and clause-local negation filtering, so <code>npm test</code> cannot match inside
+            <code>pnpm test</code> and a prohibition is not scored as an execution. Codex ignores
+            user config/rules and requires
             <code>OPENAI_API_KEY</code>, so global instructions and memory cannot contaminate the
             control. A pass proves only those recorded cases on that recorded consumer/version/model;
             it is not universal behavioral equivalence.
-            A no-change plan records <code>semantic_verification: not_applicable</code>.
+            A no-change plan records <code>semantic_verification: not_applicable</code>; a fresh
+            snapshot may still use one read-only Analyst call. Exact validated repeats use its
+            content-addressed cache and make zero provider calls.
           </p>
         </div>
 
         <div class="boundary-note">
-          <p class="boundary-title">v0.2.0 live receipts: stable files stay stable; defective copies converge</p>
+          <p class="boundary-title">v0.3.0 live receipts: real files preserved, disposable rewrite qualified</p>
+          <p>
+            Claude run <code>20260819T200834Z-321749c4</code> found four nominations and
+            compiled one report-only enforcement escalation plus one missing-rule suggestion;
+            outcome <code>enforcement_candidates</code> preserved all 65 directives and 10,703
+            bytes. Codex run <code>20260819T200912Z-ef9020d0</code> found five nominations; its
+            Drafter added unsupported force, so <code>drafter_rejected</code> preserved all 33
+            directives and 4,276 bytes. Exact repeats used the Analyst cache. Neither run changed
+            a target or established behavioral equivalence.
+          </p>
+          <p>
+            Disposable package-manager plans <code>20260819T204620Z-53e25b49</code> (Claude)
+            and <code>20260819T204859Z-ab0a357e</code> (Codex) each compiled an admitted temporal
+            <code>npm</code>→<code>pnpm</code> rewrite. Claude Code 2.1.224 with
+            <code>claude-sonnet-4-6</code> and Codex CLI 0.147.0 with
+            <code>gpt-5.6-sol</code> each passed three repeats of two trigger probes and one
+            counter-probe. Verification SHAs were
+            <code>608c186ffa650fd7f6373c586811e926d299b48ca1da378b0ca4de5d29ee8c8c</code>
+            and <code>5aa093c94010685ecf9278eafe06b12fda5cc628f0019b5e8e4fc3182cc3f241</code>.
+            Only the disposable Codex-qualified plan was applied. Its target reached
+            <code>838ce9afe2405bb6ff999dc64722cc89191ece65b35b786ab6dd2615e0135f2b</code>;
+            repeat run <code>20260819T205423Z-f3b11c4a</code> was byte-identical
+            <code>reviewed_noop</code> with zero confirmed unresolved defects. Real Claude and
+            Codex instruction files remained unchanged.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">Historical v0.2.0 receipts: fixed-point and verifier evidence</p>
           <p>
             The restored live Claude and Codex targets produced zero-call, byte-identical
             <code>stable_noop</code> runs <code>20260819T161206Z-d6dbad85</code> and
@@ -342,8 +443,10 @@
             <code>20260819T171954Z-d68b18c5</code> was also a zero-call identical no-op. A
             lower-position Claude rewrite
             <code>20260819T165129Z-70f323ea</code> fell from 18/18 to 17/18, failed closed, and was
-            never applied. These six owner-authored Kindex cases are bounded evidence, not a
-            universal claim or a promise about future models.
+            never applied. Those six owner-authored Kindex cases remain bounded evidence for the
+            fixed-point and verifier mechanisms. The new disposable semantic receipt qualifies
+            only its three named package-manager cases. None is a universal claim or a promise
+            about future models.
           </p>
         </div>
 
@@ -461,7 +564,7 @@
           <p class="eyebrow">Get started</p>
           <h2>Inspect first. Verify behavior before a changed apply.</h2>
           <p class="start-copy">
-            The canonical v0.2.0 public artifact is the versioned wheel attached to its GitHub
+            The canonical v0.3.0 public artifact is the versioned wheel attached to its GitHub
             Release. PyPI publication is not claimed, and CI does not publish. Contributors can
             still clone the repository for an editable install.
           </p>
@@ -472,7 +575,7 @@
             <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
           </div>
           <pre id="install-code"><code>python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.2.0/meditate_agent-0.2.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl
 .venv/bin/meditate init
 .venv/bin/meditate inspect</code></pre>
         </div>
@@ -506,7 +609,7 @@
         <div class="reference-links">
           <a href="https://github.com/jmcentire/meditate/blob/main/README.md">Full usage guide <span aria-hidden="true">↗</span></a>
           <a href="https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md">Design and authority contracts <span aria-hidden="true">↗</span></a>
-          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.2.0 changelog <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.3.0 changelog <span aria-hidden="true">↗</span></a>
           <a href="llms.txt">Agent-readable index <span aria-hidden="true">→</span></a>
         </div>
       </div>
@@ -518,7 +621,7 @@
         <h2>Your instruction file should be maintained like code—not accumulated like a chat log.</h2>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/jmcentire/meditate">Explore the repository</a>
-          <a class="button button-secondary" href="#start">Install v0.2.0</a>
+          <a class="button button-secondary" href="#start">Install v0.3.0</a>
         </div>
       </div>
     </section>

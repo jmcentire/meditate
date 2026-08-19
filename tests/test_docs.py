@@ -290,6 +290,7 @@ def test_privacy_surfaces_disclose_decision_relay_storage_and_purge_boundaries()
             text,
         ), f"{surface}: missing private local storage-directory disclosure"
         artifact_markers = {
+            "analysis": ("semantic analysis", "analysis.json"),
             "plan": ("decision plan", "plan.json"),
             "manifest": ("manifest", "manifest.json"),
             "evidence": ("evidence", "evidence.json"),
@@ -349,8 +350,9 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
     llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
     combined = index + "\n" + llms_full
 
-    assert re.search(r"prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?10\b", combined)
-    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?25\b", combined)
+    assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?4\b", combined)
+    assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?16\b", combined)
+    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?32\b", combined)
     assert re.search(
         r"summar(?:y|ies).{0,180}(?:deterministic|locally computed|validated data)|"
         r"(?:deterministic|locally computed).{0,180}summar(?:y|ies)",
@@ -391,10 +393,26 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
     assert re.search(r"byte(?:s| counts?)?\s+(?:are|is).{0,40}telemetry", combined)
     assert re.search(r"(?:output|directive).{0,80}(?:may|can).{0,40}grow", combined)
     assert "stable_noop" in combined
-    assert re.search(r"stable(?:_noop| no-op).{0,140}zero (?:provider|model) calls?", combined)
+    assert re.search(
+        r"(?:exact|cache).{0,180}(?:repeat|hit).{0,180}zero (?:provider|model) calls?",
+        combined,
+    )
     assert "reviewed_noop" in combined
+    assert "semantic_review_required" in combined
+    assert "new_rule_hypotheses" in combined
     assert "exact_duplicate" in combined and "confirmed" in combined
     assert "exception_lineage" in combined and "review" in combined
+    for candidate_class in (
+        "contradiction",
+        "temporal_supersession",
+        "underspecified",
+        "overspecified",
+        "wrong_scope",
+        "enforcement_candidate",
+        "missing_rule",
+    ):
+        assert candidate_class in combined
+    assert "write_authority=none" in combined
     assert "non_idempotent_proposal" in combined
     assert re.search(r"(?:ten|10) iterations?.{0,100}(?:without drift|do not drift)", combined)
 
