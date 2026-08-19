@@ -140,6 +140,10 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
     md_path = root / f"{plan.run_id}.md"
     run_dir = config.data_root / "runs" / plan.run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest_targets = manifest.get("targets", [])
+    changed_targets = sum(
+        1 for item in manifest_targets if isinstance(item, dict) and item.get("changed", True)
+    )
     semantic_analysis_public = analysis_summary(plan.semantic_analysis)
     decision_response_argv: dict[str, list[str]] = {}
     if plan.decision_request:
@@ -181,6 +185,16 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         },
         "minimum_apply_mode": plan.minimum_apply_mode,
         "blocked_reasons": list(plan.blocked_reasons),
+        "apply_command": (
+            (
+                f"meditate apply {plan.run_id} --reversible"
+                if plan.minimum_apply_mode == "unattended"
+                else f"meditate apply {plan.run_id} --approve {plan.plan_sha256}"
+            )
+            if changed_targets and not plan.blocked_reasons
+            else None
+        ),
+        "restore_command": f"meditate restore {plan.run_id}" if changed_targets else None,
         "directives": plan.directive_count,
         "pre_directives": plan.directive_count,
         "post_directives": plan.post_directive_count,
@@ -195,7 +209,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "post_lines": plan.metrics.get("post_lines", 0),
         "line_delta": plan.metrics.get("line_delta", 0),
         "metrics": plan.metrics,
-        "targets": manifest.get("targets", []),
+        "targets": manifest_targets,
         "usage": plan.usage.to_dict(),
         "summary": plan.raw_plan.get("summary", ""),
         "unresolved_conflicts": plan.raw_plan.get("unresolved_conflicts", []),
@@ -224,6 +238,13 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
     codex_budget = plan.metrics.get("codex_instruction_budget", {})
     if not isinstance(codex_budget, dict):
         codex_budget = {}
+    report_apply_command = None
+    if changed_targets and not plan.blocked_reasons:
+        report_apply_command = (
+            f"meditate apply {plan.run_id} --reversible"
+            if plan.minimum_apply_mode == "unattended"
+            else f"meditate apply {plan.run_id} --approve {plan.plan_sha256}"
+        )
     sections = [
         "# Meditate proposal",
         "",
@@ -260,7 +281,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         f"- Directive delta: {plan.metrics.get('directive_delta', 0):+d}",
         f"- Changed directives: {plan.changed_directive_count}",
         f"- Escalated directives: {plan.escalated_directive_count}",
-        f"- Report-only new-rule hypotheses: {plan.new_rule_suggestion_count}",
+        f"- Reversible new-rule introductions: {plan.new_rule_suggestion_count}",
         (
             "- Semantic Analyst: "
             f"`{_safe_code(str(semantic_analysis_public.get('status', 'not_run')))}`; "
@@ -285,18 +306,25 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             f"configured targets {codex_budget.get('configured_target_count', 0)}"
         ),
         f"- Minimum apply mode: `{plan.minimum_apply_mode}`",
+        f"- Apply: `{report_apply_command}`" if report_apply_command else "- Apply: none",
         f"- Blocked: {', '.join(plan.blocked_reasons) if plan.blocked_reasons else 'no'}",
         f"- Parent plan SHA-256: `{plan.parent_plan_sha256 or 'none'}`",
         f"- Parent packet SHA-256: `{plan.parent_packet_sha256 or 'none'}`",
         f"- Decision depth: {plan.decision_lineage.get('depth', 0)}",
         (
+            f"- Restore after apply: `meditate restore {plan.run_id}`"
+            if changed_targets
+            else "- Restore after apply: none"
+        ),
+        (
             f"- Tokens: {plan.usage.actual_input_tokens} input / "
             f"{plan.usage.actual_output_tokens} output"
         ),
         "",
-        "Structural validation is not behavioral qualification. Every changed plan remains "
-        "inapplicable until a frozen owner-authored probe/counter-probe suite passes; the planner "
-        "never receives that suite or its results.",
+        "Structural validation is not behavioral qualification. A frozen owner-authored "
+        "probe/counter-probe suite adds evidence when configured, but reversible instruction "
+        "edits may apply without one. Meditate archives exact pre-images before every write; "
+        "rollback restores the instruction artifact, not external side effects already caused.",
         "",
         "## Summary",
         "",
@@ -331,7 +359,8 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
                 "report only because the hypothesis crosses a target or heading boundary"
             ),
             "suggestion_candidate": (
-                "missing-behavior hypothesis eligible only for a report-only draft"
+                "missing-behavior hypothesis eligible for one locally validated reversible "
+                "introduction"
             ),
         }
         sections.extend(
@@ -383,13 +412,12 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         sections.extend(
             [
                 "",
-                "## Report-only new-rule hypotheses",
+                "## Reversible new-rule introductions",
                 "",
-                "These drafts are not included in proposed target bytes and cannot be applied. "
-                "Each derives from the named Analyst nomination and requires explicit promotion "
-                "plus independent behavioral qualification. Meditate v0.3 has no promotion "
-                "command: the operator must deliberately author or promote the rule after "
-                "supplying a hidden owner-authored probe/counter-probe suite.",
+                "Each directive derives from the named Analyst nomination, is rendered into the "
+                "proposed target, and is recoverable from the exact archived pre-image. A "
+                "configured owner-authored suite may qualify it, but is not a universal write "
+                "precondition.",
             ]
         )
         for suggestion in suggestions:
@@ -419,7 +447,13 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
                         if compiled.get("boundary_example")
                         else "none"
                     ),
-                    "- Write authority: `none`",
+                    "- Write authority: `"
+                    + _safe_code(str(suggestion.get("write_authority", "")))
+                    + "`",
+                    "- Apply mode: `"
+                    + _safe_code(str(suggestion.get("minimum_apply_mode", "")))
+                    + "`",
+                    "- Restore: `meditate restore " + plan.run_id + "`",
                 ]
             )
     if plan.operator_decision:

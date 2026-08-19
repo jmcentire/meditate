@@ -11,7 +11,7 @@ from helpers import StubProvider, inspection, keep_all, qualify_plan, replace_ma
 
 import meditate.transaction as transaction
 from meditate.models import Authority, EvidenceEvent
-from meditate.plan import create_plan
+from meditate.plan import REQUIRED_SEMANTIC_VERIFICATION, create_plan
 from meditate.transaction import apply_run, purge_run, restore_run
 from meditate.util import MeditateError, canonical_json_bytes, sha256_bytes
 
@@ -257,7 +257,7 @@ def test_noop_plan_cannot_be_counted_as_an_apply(config_factory: ConfigFactory) 
     assert caught.value.code == "no_changes"
 
 
-def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_policy(
+def test_attended_apply_no_longer_requires_owner_suite_but_unattended_shape_still_applies(
     config_factory: ConfigFactory,
 ) -> None:
     original = f"# Git\n\n- {OBSOLETE_COMMIT_RULE}\n"
@@ -279,7 +279,7 @@ def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_poli
     plan = create_plan(config, provider=provider, inspection=inspection(config, (reviewed,)))
     with pytest.raises(MeditateError) as caught:
         apply_run(config, plan.run_id, mode="unattended")
-    assert caught.value.code == "semantic_verification_required"
+    assert caught.value.code == "attended_required"
     assert target.read_text(encoding="utf-8") == original
 
     state = json.loads(
@@ -288,7 +288,6 @@ def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_poli
     assert state["state"] == "planned"
     assert state["consumed"] is False
 
-    qualify_plan(config, plan.run_id)
     receipt = apply_run(
         config,
         plan.run_id,
@@ -296,7 +295,49 @@ def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_poli
         approval_sha256=plan.plan_sha256,
     )
     assert receipt["approval"] == "plan_sha256"
+    assert receipt["semantic_qualification"]["status"] == "not_run"
     assert "Commit completed work" in target.read_text(encoding="utf-8")
+
+
+def test_archive_created_under_required_verification_still_requires_its_receipt(
+    config_factory: ConfigFactory,
+) -> None:
+    original = f"# Git\n\n- {OBSOLETE_COMMIT_RULE}\n"
+    config, (target,) = config_factory((original,))
+    provider = StubProvider(
+        replace_matching(
+            {OBSOLETE_COMMIT_RULE: "- Commit completed work after project tests pass."}
+        )
+    )
+    plan = create_plan(config, provider=provider, inspection=inspection(config, (correction(),)))
+    run_dir = config.data_root / "runs" / plan.run_id
+    plan_path = run_dir / "plan.json"
+    manifest_path = run_dir / "manifest.json"
+    state_path = run_dir / "state.json"
+    archived_plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    archived_plan["semantic_verification"] = REQUIRED_SEMANTIC_VERIFICATION
+    manifest["semantic_verification"] = REQUIRED_SEMANTIC_VERIFICATION
+    core = {key: value for key, value in archived_plan.items() if key != "plan_sha256"}
+    required_plan_sha256 = sha256_bytes(canonical_json_bytes(core))
+    archived_plan["plan_sha256"] = required_plan_sha256
+    manifest["plan_sha256"] = required_plan_sha256
+    state["plan_sha256"] = required_plan_sha256
+    plan_path.write_bytes(canonical_json_bytes(archived_plan))
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+    state_path.write_bytes(canonical_json_bytes(state))
+
+    with pytest.raises(MeditateError) as caught:
+        apply_run(
+            config,
+            plan.run_id,
+            mode="attended",
+            approval_sha256=required_plan_sha256,
+        )
+
+    assert caught.value.code == "semantic_verification_required"
+    assert target.read_text(encoding="utf-8") == original
 
 
 def test_purge_is_preview_only_then_leaves_tombstone(config_factory: ConfigFactory) -> None:

@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from conftest import ConfigFactory
 from helpers import (
+    StageProvider,
     StubProvider,
     empty_compiled_directive,
     inspection,
@@ -18,7 +19,8 @@ from helpers import (
 
 import meditate.plan as plan_module
 import meditate.transaction as transaction
-from meditate.cli import main
+from meditate.cli import _validated_plan_payload, main
+from meditate.config import SafetyConfig
 from meditate.models import Authority, EvidenceEvent, RunUsage
 from meditate.plan import (
     PLAN_PROMPT_VERSION,
@@ -30,7 +32,7 @@ from meditate.plan import (
 )
 from meditate.provider import AnthropicProvider
 from meditate.report import write_plan_report
-from meditate.transaction import apply_run
+from meditate.transaction import apply_run, restore_run
 from meditate.util import MeditateError, canonical_json_bytes, sha256_bytes
 
 
@@ -98,6 +100,68 @@ def _replacement_plan(config_factory: ConfigFactory):
         inspection=inspection(config, (_correction(),)),
     )
     return config, target, original, plan
+
+
+def test_nonzero_churn_budget_permits_one_rule_repair_and_reversible_restore(
+    config_factory: ConfigFactory,
+) -> None:
+    obsolete = (
+        "Commit only when asked, even when completed work has passed all project-required "
+        "checks and is ready."
+    )
+    original = f"# Git\n\n- {obsolete}\n"
+    config, (target,) = config_factory(
+        (original,),
+        target_names=("CLAUDE.md",),
+        safety=SafetyConfig(
+            size_floor_ratio=0.20,
+            size_ceiling_ratio=3.0,
+            max_churn_ratio=0.65,
+            max_malformed_ratio=0.20,
+            minimum_free_bytes=1,
+        ),
+    )
+    correction = _correction()
+
+    def nominate(packet: dict[str, Any]) -> dict[str, Any]:
+        source_id = packet["targets"][0]["directives"][0]["id"]
+        return {
+            "schema_version": 1,
+            "nominations": [
+                {
+                    "candidate_class": "temporal_supersession",
+                    "domain": "git",
+                    "source_ids": [source_id],
+                    "evidence_ids": [correction.id],
+                    "behavioral_intent": (
+                        "Commit completed work after project-required checks pass without waiting."
+                    ),
+                    "reason": "The explicit newer correction reverses the opt-in-only rule.",
+                    "applies_when": "Completed work passes project-required checks.",
+                    "does_not_apply_when": "A project handoff or approval boundary applies.",
+                }
+            ],
+        }
+
+    provider = StageProvider(
+        nominate,
+        replace_matching({obsolete: "- Commit completed work after project-required checks pass."}),
+    )
+
+    plan = create_plan(
+        config,
+        provider=provider,
+        analyst_provider=provider,
+        inspection=inspection(config, (correction,)),
+    )
+
+    assert plan.changed_directive_count == 1
+    assert plan.minimum_apply_mode == "unattended"
+    receipt = apply_run(config, plan.run_id, mode="reversible")
+    assert receipt["restore_command"] == f"meditate restore {plan.run_id}"
+    assert target.read_text(encoding="utf-8") != original
+    restore_run(config, plan.run_id)
+    assert target.read_text(encoding="utf-8") == original
 
 
 def _dicts(value: Any) -> Iterator[dict[str, Any]]:
@@ -458,6 +522,10 @@ def test_escalation_is_report_only_preserves_exact_bytes_and_is_locally_enriched
     report = json.loads(report_json_path.read_text(encoding="utf-8"))
     assert any(item.get("candidate_only") is True for item in _dicts(report))
     assert not any(item.get("apply_command") for item in _dicts(report) if "apply_command" in item)
+    cli_payload = _validated_plan_payload(config, plan)
+    assert cli_payload["action_required"] is True
+    assert cli_payload["apply_command"] is None
+    assert "unresolved" in cli_payload["next_action"].lower()
 
     with pytest.raises(MeditateError) as caught:
         apply_run(config, plan.run_id, mode="attended", approval_sha256=plan.plan_sha256)

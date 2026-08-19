@@ -60,6 +60,14 @@ be read as evidence. Histories, memory, and Kindex are read-only; Meditate write
 only exact instruction targets declared in its configuration. Model output is
 untrusted and cannot choose filesystem paths or mint durable identifiers.
 
+A locally admitted low-blast-radius plan may be applied with `--reversible` or by
+an explicit `run --apply`. Before writing, Meditate preserves and hash-verifies the
+exact pre-image; the receipt states the changed targets and `meditate restore RUN_ID`.
+Consequential credential, permission, hook/settings, destructive, force, or automatic
+remote/release/deployment changes require exact attended approval. Restore recovers
+instruction-file bytes, but cannot undo a downstream action performed by another process
+after it consumed the changed instructions.
+
 `analysis.json`, `plan.json`, `manifest.json`, `evidence.json`, semantic cache
 entries, frozen `verification-suite.json`, `verification.json`, and run-specific JSON/Markdown
 reports are private local plan artifacts stored in XDG state/data directories.
@@ -84,9 +92,9 @@ sets no cookies and loads no third-party analytics, scripts, fonts, or images.
 GitHub Pages may process ordinary request metadata under GitHub's own terms.
 
 The operator controls evidence sources, model/provider configuration, retention,
-writable targets, and whether a reviewed proposal is applied. Operators should
+writable targets, and whether `run --apply` or a direct apply command is invoked. Operators should
 review their model provider's data-handling terms before enabling model calls or
 opt-in transcript bodies.
 
 See the [full privacy page](https://jmcentire.github.io/meditate/privacy.html) for
-details. Last updated August 19, 2026; applies to Meditate 0.3.x.
+details. Last updated August 19, 2026; applies to Meditate 0.4.x.

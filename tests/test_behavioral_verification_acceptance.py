@@ -621,7 +621,7 @@ def test_defective_fixture_corrects_once_then_reaches_byte_identical_fixed_point
 
     first = create_plan(config, inspection=inspection(config, ()))
     assert first.changed_directive_count == 2
-    assert first.consolidation_preflight["status"] == "defect_resolution_proposed"
+    assert first.consolidation_preflight["status"] == "reversible_resolution_ready"
     assert first.consolidation_preflight["defects_resolved"] == ["exact_duplicate"]
     assert first.raw_plan["changes"][0]["source_only_consolidation"] is True
     suite_path = tmp_path / "fixed-point-suite.json"

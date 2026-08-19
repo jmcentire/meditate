@@ -183,7 +183,9 @@ max_malformed_ratio = 0.02
 minimum_free_bytes = 5000000
 
 [verification]
-# Owner-authored JSON suite. It is never sent to the consolidation planner.
+# Optional owner-authored JSON suite. It is never sent to the consolidation planner.
+# When configured, `run --apply` executes it and blocks on failure. Exact-preimage
+# reversible instruction edits do not require a suite merely because one is absent.
 suite = ""
 agent = "claude" # claude or codex
 model = ""
@@ -192,13 +194,12 @@ timeout_seconds = 180
 max_output_chars = 20000
 
 [apply]
-# Compatibility fields retained in schema version 1. They do not bypass the
-# owner-defined semantic qualification gate. A changed plan still needs its own
-# passed, hash-bound verification receipt before any apply mode can write.
+# `run --apply` may write only locally classified consequence-reversible plans.
+# These compatibility controls govern cron-style unattended application beyond
+# that explicit command; they never bypass target, drift, secret, or safety gates.
 allow_unattended_apply = false
 minimum_attended_applies = 3
-# Evidence allowlisting records review provenance but cannot establish behavioral
-# equivalence or substitute for the owner suite.
+# Evidence allowlisting records review provenance; it is not behavioral proof.
 unattended_evidence_ids = []
 
 [retention]

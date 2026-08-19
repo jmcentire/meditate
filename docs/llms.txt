@@ -2,9 +2,9 @@
 
 > Authority before confidence: operator instructions, explicit corrections, scope, and named handoff boundaries outrank model fluency.
 
-Version described: 0.3.0 alpha. Canonical public distribution: the versioned wheel on the v0.3.0 GitHub Release. PyPI publication is not claimed; CI builds but does not publish.
+Version described: 0.4.0 alpha. Canonical public distribution: the versioned wheel on the v0.4.0 GitHub Release. PyPI publication is not claimed; CI builds but does not publish.
 
-Meditate is building toward a local behavioral-contract compiler and policy router for directives loaded by Claude Code and OpenAI Codex. Version 0.3 provides two separate production boundaries: evidence-grounded semantic nomination, then bounded and recoverable directive compilation over only locally admitted candidates. It does not yet promote missing-rule hypotheses. It combines current prose with temporally ordered interactions, memory, and Kindex—an optional local persistent knowledge graph exposed through `kin`—to nominate contradictions, supersession, under- and over-specification, wrong scope, enforcement candidates, and missing-rule hypotheses. Its fixed point is stability, not shrinkage.
+Meditate is a local behavioral-contract compiler and policy router for directives loaded by Claude Code and OpenAI Codex. Version 0.4 provides evidence-grounded semantic nomination, bounded directive compilation, and archive-first reversible execution over locally admitted candidates. Evidence-backed missing rules can become reversible introductions into exact configured targets. It combines current prose with temporally ordered interactions, memory, and Kindex—an optional local persistent knowledge graph exposed through `kin`—to nominate contradictions, supersession, under- and over-specification, wrong scope, enforcement candidates, and missing-rule hypotheses. Its fixed point is stability, not shrinkage.
 
 ## Canonical documentation
 
@@ -12,7 +12,7 @@ Meditate is building toward a local behavioral-contract compiler and policy rout
 - [Privacy](https://jmcentire.github.io/meditate/privacy.html): Analyst/planner/verifier transmission, local artifacts, credentials, and telemetry boundaries
 - [Source README](https://github.com/jmcentire/meditate/blob/main/README.md): Operator guide
 - [Design brief](https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md): Authority, semantic nomination, typed compilation, behavioral qualification, import, and transaction contracts
-- [Changelog](https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md): v0.3.0 release contents
+- [Changelog](https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md): v0.4.0 release contents
 - [Full agent reference](https://jmcentire.github.io/meditate/llms-full.txt): Expanded machine-readable reference
 
 ## Essential contract
@@ -22,12 +22,14 @@ Meditate is building toward a local behavioral-contract compiler and policy rout
 - Both model stages cite only IDs from explicit allowlists. Local code materializes exact sanitized evidence text, inherits the complete evidence set for each admitted semantic candidate, rejects unrelated model-supplied IDs, requires each record to contain at least 12 characters and two meaningful terms plus three shared intent-grounding terms, computes stable nomination/fingerprint IDs, and admits only same-target/same-heading existing-rule nominations with external evidence or a multi-source ground to mutation. Single-source observations without external evidence and cross-scope findings remain report-only. Invalid nominations are counted independently; all rejected yields `semantic_analysis_inconclusive`, not `stable_noop`.
 - A rewrite rejected by an explicitly allowlisted semantic-quality gate produces an unchanged `drafter_rejected` receipt containing the deterministic rejection code; its semantic analysis remains inspectable and no target bytes change. Authority, schema, secrecy, scope, candidate-boundary, and malformed top-level Drafter failures still abort. Meditate never weakens a gate to make model output pass.
 - Report-only hook/settings escalations produce `enforcement_candidates`: prose remains byte-identical and the underlying defect stays unresolved until enforcement is deliberately installed and qualified.
-- A missing-rule nomination needs explicit durability, an active Kindex directive, or repeated independent correction/directive groups. Its RFC-shaped draft returns only an exact allowlisted nomination ID; local code inherits the immutable evidence set. It has `write_authority=none`, never enters target bytes, cannot apply, and needs later explicit promotion plus owner-authored qualification. Version 0.3 has no promotion command.
-- Promotion thresholds are explicit: a one-source existing-rule observation stays report-only until external evidence or corroborating current sources exist; a missing rule requires explicit operator promotion plus an owner-authored suite; an escalation requires deliberate enforcement installation plus qualification on that consumer's actual interception surface.
+- A missing-rule nomination needs explicit durability, an active Kindex directive, or repeated independent correction/directive groups. Its RFC-shaped draft returns only an exact allowlisted nomination ID; local code inherits the immutable evidence set, assigns `write_authority=reversible`, renders only into an exact configured target, and archives the pre-image before write.
+- Admission thresholds are explicit: a one-source existing-rule observation stays report-only until external evidence or corroborating current sources exist; a missing rule must satisfy the durable-evidence threshold; an escalation requires deliberate enforcement installation plus qualification on that consumer's actual interception surface.
 - Deterministic preflight still confirms exact duplicates and treats exception lineage only as a review candidate. Density, age, history overlap, and size do not create defects.
 - The first exact stable snapshot may use one Analyst call. The validated result is content-addressed; exact repeats make zero Analyst calls, zero Drafter calls, preserve bytes, and return `stable_noop`. Default `llm.max_calls = 2` allows at most one Analyst and one Drafter; new configs use aggregate input/output defaults of 160,000/16,384 tokens across both.
-- Every source directive has exactly one disposition: keep, replace, remove, relocate, or report-only escalate. Semantic replacements are typed RFC 2119 records: keyword, concrete rule, reason, scope, and optional boundary example.
-- A changed plan requires `meditate verify`: an owner-authored suite hidden from the planner, run against control, predecessor, and candidate bundles on the consuming Claude or Codex CLI. A pass is limited to the recorded cases, agent/version/model, and artifacts; it is not universal behavioral equivalence.
+- Every source directive has exactly one disposition: keep, replace, remove, relocate, or report-only escalate. Semantic replacements and introductions are typed RFC 2119 records: keyword, concrete rule, reason, scope, and optional boundary example. Every Meditate-written directive uses one meaningful `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, or `MAY`; `ALWAYS` maps to `MUST`, `NEVER` to `MUST NOT`, and ambiguous `MAY NOT` is excluded. Valid legacy prose is not rewritten solely to add modality.
+- `meditate verify` is optional additional evidence: an owner-authored suite hidden from the planner, run against control, predecessor, and candidate bundles on the consuming Claude or Codex CLI. A failure blocks apply; absence does not strand a locally admitted recoverable edit. A pass is limited to the recorded cases, agent/version/model, and artifacts; it is not universal behavioral equivalence.
+- Low-blast-radius plans apply with `--reversible` after exact archive/hash/drift checks. Consequential credential, permission, hook/settings, destructive, force, or automatic remote/release/deploy changes require exact hash-bound attended approval. Every successful apply reports the change and `meditate restore RUN_ID`.
+- `meditate run --apply` never reports `not_needed` when known semantic work remains: it applies, presents a decision/confirmation boundary, or exits nonzero with `action_required`.
 - Verifier protocol v3 applies alphanumeric detector boundaries and clause-local negation filtering, so one command name cannot match inside another and a prohibition is not scored as an execution.
 - When Kindex is enabled and `kin` is installed, every configured search and requested node read is required. Failure aborts with `kindex_required_failed`; durable evidence is never silently omitted.
 - Runtime credentials use only `ANTHROPIC_API_KEY` for planning and `OPENAI_API_KEY` for clean-room Codex verification. Values are never persisted.
@@ -36,9 +38,15 @@ Meditate is building toward a local behavioral-contract compiler and policy rout
 
 ## Stage provenance
 
-- Analyst prompt v4: `254f2afb6ccb583146823ff96396dc6c7cf8099f1e1754c9e2fea780b8118847`; parser `meditate-analyst-parser-v5`.
-- Drafter prompt v16: `5f3863095efd232010b596bdefb35bde79ace8047ac595757f03115064fb5a51`; parser `meditate-parser-v32`.
+- Analyst prompt v5: `307102f58c9335591d3bae98587b7f95ebe3e14a66c9b4ce42678d5b72aac38b`; parser `meditate-analyst-parser-v6`.
+- Drafter prompt v17: `f6ad4ef581a6b55baa11f7ecb76e204a2cc1774c60baf5e6f0b4637b0906f82f`; parser `meditate-parser-v33`.
 - Plans, manifests, `analysis.json`, reports, CLI JSON, and JSONL bind the semantic stage summary/provenance. Archive verification rejects tampering or prompt/parser drift.
+
+## v0.4.0 live reversible receipts
+
+- Real `claude-sonnet-4-6` contradiction run `20260819T223808Z-edab9da1` changed one disposable target, emitted `meditate restore 20260819T223808Z-edab9da1`, and restored exact pre-image SHA-256 `44121c12b2c9b266d77e901180010ccd6307e8e3b243a1d91e5a98edcdee588a`.
+- Real missing-rule run `20260819T223852Z-cb1dedc1` introduced one RFC-shaped directive into an exact disposable target, emitted its restore command, and restored exact pre-image SHA-256 `5f6843e85957787c3ca965297b37480ff5698352839301e783d507bf82d3159b`.
+- Both recorded `semantic_qualification.status=not_run`; they prove reversible execution and exact recovery, not downstream behavioral equivalence.
 
 ## v0.3.0 live semantic receipts
 
@@ -63,8 +71,8 @@ The recommendation is model-authored and advisory, never a default. `meditate de
 
 ## Distribution
 
-v0.3.0 wheel: https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl
+v0.4.0 wheel: https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl
 
 ## Research boundary
 
-Adjacent linters are real and useful. Meditate's distinction is cited semantic nomination from temporal evidence, typed report-only missing-rule hypotheses, total disposition inside admitted mutation boundaries, independent consumer qualification, and exact recoverability. The exact purported paper title `A Taxonomy of Agent Instruction Failures` by Gloaguen et al. was not verified and is not load-bearing. The verified paper is `Coding Agents Don't Know When to Act`: https://arxiv.org/abs/2605.07769.
+Adjacent linters are real and useful. Meditate's distinction is cited semantic nomination from temporal evidence, typed reversible missing-rule introductions, total disposition inside admitted mutation boundaries, optional independent consumer qualification, and exact recoverability. The exact purported paper title `A Taxonomy of Agent Instruction Failures` by Gloaguen et al. was not verified and is not load-bearing. The verified paper is `Coding Agents Don't Know When to Act`: https://arxiv.org/abs/2605.07769.

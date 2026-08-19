@@ -10,11 +10,35 @@ from pathlib import Path
 import pytest
 from conftest import ConfigFactory
 
+import meditate.cli as cli_module
 from meditate.cli import main
 from meditate.config import default_config_text, load_config
 from meditate.cron import check_cron_environment, render_cron_entry
 from meditate.provider import resolve_anthropic_key
 from meditate.util import MeditateError
+
+
+def test_run_apply_does_not_report_not_needed_for_unresolved_semantic_work(
+    config_factory: ConfigFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config, _targets = config_factory()
+    monkeypatch.setattr(cli_module, "_configured", lambda _args: config)
+    monkeypatch.setattr(
+        cli_module,
+        "_plan_payload",
+        lambda _config, *, include_inspection_report: {
+            "changed_targets": 0,
+            "action_required": True,
+            "plan_report_markdown": "/tmp/meditate-action-required.md",
+        },
+    )
+
+    assert main(["run", "--apply", "--json"]) == 2
+    error = json.loads(capsys.readouterr().err)
+    assert error["error"] == "action_required"
+    assert "not_needed" not in json.dumps(error)
 
 
 def test_init_writes_private_config_and_refuses_silent_overwrite(

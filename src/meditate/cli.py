@@ -115,18 +115,31 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
     plan_json, plan_markdown = write_plan_report(config, plan)
     changed_targets = _changed_target_count(config, plan.run_id)
     apply_command = (
-        f"meditate apply {plan.run_id} --approve {plan.plan_sha256}"
-        if changed_targets
-        and not plan.blocked_reasons
-        and plan.semantic_verification.get("status") == "passed"
+        (
+            f"meditate apply {plan.run_id} --reversible"
+            if plan.minimum_apply_mode == "unattended"
+            else f"meditate apply {plan.run_id} --approve {plan.plan_sha256}"
+        )
+        if changed_targets and not plan.blocked_reasons
         else None
     )
     verify_command = (
         f"meditate verify {plan.run_id}"
-        if changed_targets
-        and not plan.blocked_reasons
-        and plan.semantic_verification.get("status") == "required"
+        if changed_targets and not plan.blocked_reasons and config.verification.suite is not None
         else None
+    )
+    outcome = str(plan.consolidation_preflight.get("outcome", ""))
+    action_required = bool(
+        plan.escalated_directive_count
+        or plan.blocked_reasons
+        or outcome
+        in {
+            "drafter_rejected",
+            "enforcement_candidates",
+            "reviewed_noop",
+            "semantic_analysis_inconclusive",
+            "semantic_review_required",
+        }
     )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -165,6 +178,14 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
         "plan_report_markdown": str(plan_markdown),
         "apply_command": apply_command,
         "verify_command": verify_command,
+        "restore_command": f"meditate restore {plan.run_id}" if changed_targets else None,
+        "action_required": action_required,
+        "next_action": (
+            "Review the unresolved semantic or enforcement finding in the Markdown report; "
+            "Meditate will not label it not-needed."
+            if action_required
+            else None
+        ),
     }
     if plan.decision_request is not None:
         decision_view = decision_payload(config, plan.run_id)
@@ -308,13 +329,28 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.apply and payload["changed_targets"]:
             if payload["blocked_reasons"]:
                 fail("plan_blocked", "The generated plan is blocked and cannot be applied")
-            payload["verification"] = verify_run(config, str(payload["run_id"]))
-            if payload["verification"]["status"] != "passed":
-                fail("semantic_verification_failed", "The owner-authored sentinel suite failed")
-            receipt = apply_run(config, str(payload["run_id"]), mode="unattended")
+            if config.verification.suite is not None:
+                payload["verification"] = verify_run(config, str(payload["run_id"]))
+                if payload["verification"]["status"] != "passed":
+                    fail(
+                        "semantic_verification_failed",
+                        "The configured owner-authored sentinel suite failed",
+                    )
+            else:
+                payload["verification"] = {
+                    "status": "not_run",
+                    "reason": "no_owner_suite_configured",
+                }
+            receipt = apply_run(config, str(payload["run_id"]), mode="reversible")
             payload["apply"] = receipt
         elif args.apply:
-            payload["apply"] = {"state": "not_needed", "reason": "no_target_changes"}
+            if payload["action_required"]:
+                fail(
+                    "action_required",
+                    "Meditate found unresolved semantic or enforcement work; inspect "
+                    f"{payload['plan_report_markdown']}",
+                )
+            payload["apply"] = {"state": "not_needed", "reason": "stable_noop"}
         else:
             payload["apply"] = {"state": "not_requested"}
         append_log(
@@ -357,7 +393,7 @@ def _run_command(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "apply":
-        mode = "unattended" if args.unattended else "attended"
+        mode = "reversible" if args.reversible else "unattended" if args.unattended else "attended"
         receipt = apply_run(
             config,
             args.run_id,
@@ -470,13 +506,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--apply",
         action="store_true",
-        help="Verify with the configured owner suite, then request unattended apply",
+        help=(
+            "Apply a consequence-reversible plan after exact pre-image archival; run a "
+            "configured owner suite first when present"
+        ),
     )
 
     apply = commands.add_parser("apply", parents=[common], help="Apply an archived exact plan")
     apply.add_argument("run_id")
-    apply.add_argument("--approve", help="Exact plan SHA-256 for attended apply")
-    apply.add_argument(
+    approval = apply.add_mutually_exclusive_group()
+    approval.add_argument("--approve", help="Exact plan SHA-256 for attended apply")
+    approval.add_argument(
+        "--reversible",
+        action="store_true",
+        help="Apply only a locally classified consequence-reversible plan",
+    )
+    approval.add_argument(
         "--unattended",
         action="store_true",
         help="Request unattended mode after a passed owner-suite receipt",
@@ -513,7 +558,7 @@ def build_parser() -> argparse.ArgumentParser:
     cron.add_argument(
         "--apply",
         action="store_true",
-        help="Print an unattended entry; runtime rejects it until qualification exists",
+        help="Print a locked entry that applies only locally classified reversible plans",
     )
     return parser
 

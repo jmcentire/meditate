@@ -1085,7 +1085,10 @@ def load_passed_verification(run_dir: Path, plan: dict[str, Any]) -> dict[str, A
         or artifact.get("response_schema_sha256") != expected_schema_sha256
         or artifact.get("condition_system_prompt_sha256") != expected_system_hashes
         or plan.get("semantic_verification")
-        != {"status": "required", "method": VERIFICATION_METHOD}
+        not in (
+            {"status": "required", "method": VERIFICATION_METHOD},
+            {"status": "optional", "method": VERIFICATION_METHOD},
+        )
     ):
         fail("semantic_verification_failed", "Semantic verification is absent, failed, or stale")
     expected_targets = [

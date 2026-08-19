@@ -35,8 +35,8 @@ from .util import (
     sha256_text,
 )
 
-ANALYST_PROMPT_VERSION = "4"
-ANALYST_PARSER_VERSION = "meditate-analyst-parser-v5"
+ANALYST_PROMPT_VERSION = "5"
+ANALYST_PARSER_VERSION = "meditate-analyst-parser-v6"
 
 _CANDIDATE_CLASSES = frozenset(
     {
@@ -178,8 +178,10 @@ OBJECTIVE:
 CANDIDATE CLASSES:
 - contradiction: same-domain, same-scope requirements cannot both govern the same case.
 - temporal_supersession: newer, applicable evidence explicitly revises an existing behavior.
-- underspecified: an existing directive omits a trigger, scope, observable criterion, reason, or
-  boundary needed to make a stable decision; mere brevity is not a defect.
+- underspecified: an existing directive omits a trigger, meaningful normative force, scope,
+  observable criterion, reason, or boundary needed to make a stable decision; mere brevity and
+  the mere absence of an RFC keyword are not defects. Nominate missing modality only when the
+  ambiguity changes what the consuming agent may, should, or must do.
 - overspecified: enumerated exceptions or actions obscure a stable reason or decision procedure;
   mere length is not a defect.
 - wrong_scope: the behavior can remain specific in a narrower path, project, role, or lifecycle
@@ -202,8 +204,10 @@ GROUNDING:
   least three meaningful terms with its cited sources and evidence. reason explains the observed
   defect or gap. applies_when and does_not_apply_when pin the decision boundary.
 - Do not use underspecified to request generic best practices or overspecified to force a shorter
-  file. Do not call complementary rules contradictory. Do not promote one-off session requests
-  into missing durable rules.
+  file. Do not request a rewrite solely to add an ornamental keyword. `ALWAYS` and `NEVER` in
+  evidence express invariant force that a compiled directive renders as `MUST` and `MUST NOT`;
+  do not use ambiguous `MAY NOT` as a modality. Do not call complementary rules contradictory.
+  Do not promote one-off session requests into missing durable rules.
 """
 
 
@@ -399,7 +403,7 @@ def validate_analysis(
         }
         if candidate_class == "missing_rule":
             admission = "suggestion_candidate"
-            admission_reason = "missing_rule_requires_explicit_promotion"
+            admission_reason = "evidence_grounded_reversible_introduction"
         elif len(source_locations) == 1 and (citations or len(source_ids) >= 2):
             admission = "mutable_candidate"
             admission_reason = "same_target_same_heading_sources"

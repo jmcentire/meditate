@@ -5,18 +5,19 @@
 [Design brief](docs/design-brief.md) ·
 [Changelog](CHANGELOG.md)
 
-Current package version: **0.3.0 alpha**.
+Current package version: **0.4.0 alpha**.
 
 Meditate's product goal is a locally operated behavioral-contract compiler and policy
-router for the directives Claude Code and OpenAI Codex load. Version 0.3 delivers two
+router for the directives Claude Code and OpenAI Codex load. Version 0.4 delivers two
 separate production boundaries: an evidence-grounded semantic Analyst that nominates
 possible defects, and a bounded directive compiler that can act only on locally admitted
 candidates. It reads current prose together with temporally ordered interactions and
 Kindex—an optional local persistent knowledge graph exposed through `kin`—then identifies
 contradictions, supersession, under- and over-specification, wrong scope, enforcement
-candidates, and evidence-backed missing-rule hypotheses. Missing rules are still
-report-only; v0.3 does not yet promote them into the durable contract. Its fixed point is
-stability, not shrinkage: a well-formed file is a successful, byte-identical no-op.
+candidates, and evidence-backed missing-rule hypotheses. A locally validated missing rule is
+now a reversible introduction into an exact configured target, not a report that strands the
+finding. Its fixed point is stability, not shrinkage: a well-formed file is a successful,
+byte-identical no-op.
 
 > **Authority before confidence.** A fluent or high-confidence rewrite has no
 > authority of its own. Current instructions, explicit corrections, applicable
@@ -37,10 +38,10 @@ Meditate does not let an LLM directly regenerate or write your instruction file.
    set and selected evidence; the Analyst may nominate seven bounded candidate classes
    but cannot draft prose, choose a path, assign authority, or authorize a write;
 8. validates every Analyst citation and source ID locally, admits only same-target,
-   same-heading existing-rule candidates to the mutable boundary, and keeps missing
-   rules and cross-scope findings report-only;
+   same-heading existing-rule candidates to the mutable boundary, admits evidence-grounded
+   missing rules as reversible introductions, and keeps cross-scope findings report-only;
 9. asks an exact model for a five-disposition operation list: keep, replace,
-   remove, relocate, or report-only escalate. Semantic replacements are typed records
+   remove, relocate, or report-only escalate. Semantic replacements and introductions are typed records
    containing an RFC 2119 keyword, rule, rationale, scope, and optional boundary example;
 10. accepts model citations only as exact allowed evidence IDs, materializes their
    substantive sanitized text locally (at least 12 characters and two meaningful
@@ -51,10 +52,11 @@ Meditate does not let an LLM directly regenerate or write your instruction file.
    `a`/`b`/`c`/custom question instead of letting the model choose for the user;
 12. binds both stage prompts/models, the semantic artifact, import graphs, semantic
    status, and pre/post directive/byte/line metrics into the plan hash;
-13. runs an owner-authored, planner-blind probe/counter-probe suite against control,
-   predecessor, and candidate instructions before any changed plan can apply; and
-14. renders unchanged spans byte-for-byte, archives pre/post images, and writes only
-   after the verification receipt and exact plan hash are accepted.
+13. can run an optional owner-authored, planner-blind probe/counter-probe suite against control,
+   predecessor, and candidate instructions as additional behavioral evidence; and
+14. renders unchanged spans byte-for-byte, archives exact pre/post images before writing,
+   applies low-blast-radius plans optimistically, prints what changed and the exact restore
+   command, and requires hash-bound confirmation for consequential plans.
 
 Raw histories are read-only. A history record with a high-confidence credential
 shape is excluded wholesale before any model call. Reports and archives live in
@@ -64,12 +66,12 @@ private XDG data/state directories, not this repository.
 
 ### GitHub Release wheel
 
-The canonical public distribution surface for v0.3.0 is the versioned wheel
+The canonical public distribution surface for v0.4.0 is the versioned wheel
 attached to its GitHub Release. After that release asset is published:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl
 .venv/bin/meditate init
 ```
 
@@ -129,7 +131,7 @@ meditate inspect --json
 # Read evidence and create a recoverable proposal. Still no target mutation.
 meditate plan --model claude-sonnet-4-6 --max-output-tokens 8192
 
-# For a changed plan, run the owner-authored suite the planner never received.
+# Optionally qualify a changed plan with an owner-authored suite the planner never received.
 meditate verify 20260818T120000Z-deadbeef \
   --suite sentinels/claude-kindex-v2.json --agent claude --repeats 3
 
@@ -139,7 +141,10 @@ meditate decisions 20260818T120000Z-deadbeef
 # Relay the user's explicit answer into a fresh read-only plan; custom is also valid.
 meditate decide 20260818T120000Z-deadbeef decision-0123456789abcdef --choice a
 
-# Review the Markdown report path printed above, then bind approval to its hash.
+# Apply a locally classified low-blast-radius plan. The receipt prints the restore command.
+meditate apply 20260818T120000Z-deadbeef --reversible
+
+# Consequential plans require attended approval bound to this exact plan hash.
 meditate apply 20260818T120000Z-deadbeef --approve PLAN_SHA256
 
 # Restore only if the live file is still the applied post-image.
@@ -153,15 +158,22 @@ meditate restore 20260818T120000Z-deadbeef --force
 source hashes, verifies every archived blob, and uses same-directory atomic
 replacement. If a multi-file write fails, it restores every target found at the
 post-image hash; ambiguous drift produces a recovery receipt instead of guessing.
+For churn limits, any configured nonzero ratio permits one independently validated directive
+repair; without that absolute floor, a one-rule file could never be repaired. Larger files remain
+bounded by the configured ratio.
 Planning also reloads configured target path/order, bytes, existence, and mode
 after the provider returns, so it will not publish a proposal against a target
 that changed during the call.
 
-An unresolved conflict or decision request, failed or missing behavioral qualification,
-malformed-corpus degradation, secret scan, unknown
+An unresolved conflict or decision request, failed behavioral qualification when verification
+was explicitly run, malformed-corpus degradation, secret scan, unknown
 evidence quote, excessive churn, size violation, protected-section edit, changed
 config, changed source file, ambiguous high-impact action gate, or truncated
 provider response blocks apply.
+
+`meditate run --apply` never turns known unresolved semantic work into a successful
+`not_needed` no-op. A non-clean run either applies a reversible change, exposes the bounded
+decision or confirmation it needs, or exits nonzero with `action_required` and its report path.
 
 ## Bounded authority decisions
 
@@ -316,21 +328,22 @@ Same-target, same-heading nominations about existing prose may become bounded Dr
 candidates. Cross-target and cross-heading findings remain report-only because scope
 cannot be averaged safely. For admitted semantic changes, local code inherits the complete
 candidate evidence set; any model-supplied evidence IDs must belong to that set. A single-source
-semantic observation without external evidence is report-only rather than mutation authority. A `missing_rule`
-has no source directive and remains a
-report-only RFC-shaped suggestion with `write_authority=none`; it is never rendered into
-the proposed file and cannot be applied. The Drafter returns only an exact allowlisted
+semantic observation without external evidence is report-only rather than mutation authority. A
+`missing_rule` has no source directive. When explicit durability, active Kindex authority, or
+repeated independent corrections support it, the Drafter may produce one RFC-shaped directive;
+local code assigns `write_authority=reversible`, renders it into an exact configured target,
+classifies its blast radius, and archives the exact pre-image before any write. The Drafter returns
+only an exact allowlisted
 nomination ID; local code inherits that nomination's immutable evidence set instead of asking
-the model to copy provenance. Promotion is a later explicit authority act, and a promoted rule
-still needs owner-authored behavioral qualification. Conversation
-review is therefore load-bearing evidence without becoming silent policy creation.
+the model to copy provenance. Conversation review is therefore load-bearing evidence, while local
+admission and recoverable apply—not model confidence—supply write authority.
 
 Promotion thresholds are explicit:
 
 - an existing-rule nomination grounded in only one current source stays report-only until
   external evidence or corroborating current sources establish a bounded review candidate;
-- a missing-rule hypothesis stays report-only until an operator explicitly promotes it and an
-  owner-authored probe/counter-probe suite qualifies the resulting directive; and
+- a missing-rule hypothesis needs explicit durable evidence, an active Kindex directive, or
+  repeated independent correction groups before it can become a reversible introduction; and
 - an escalation stays prose plus a report until an operator deliberately installs the named
   enforcement surface and qualifies that enforcement within the consuming agent's limits.
 
@@ -353,14 +366,19 @@ must return exactly five fields:
 Local validation rejects missing fields, multiline display data, invalid keywords,
 and rules that smuggle their own Markdown marker or keyword. Meditate renders a
 canonical Markdown block. The boundary example remains untrusted prose—not an
-executable test—and the owner suite remains the behavioral oracle. Byte-exact
+executable test—and an owner suite remains optional behavioral evidence. Every directive Meditate
+introduces or materially rewrites uses exactly one meaningful `MUST`, `MUST NOT`, `SHOULD`,
+`SHOULD NOT`, or `MAY`, with a reason and scope. `ALWAYS` compiles to `MUST`, `NEVER` to
+`MUST NOT`, and ambiguous `MAY NOT` is not a supported operator. An otherwise valid legacy
+directive is not churned merely to add a keyword; missing normative force is an
+`underspecified` candidate only when it changes the behavioral decision boundary. Byte-exact
 single-directive relocation and report-only remove/escalate operations use an
 empty compiled record.
 
 ## Structural validation and behavioral qualification
 
 Every changed plan begins with
-`semantic_verification={"status":"required","method":"owner_defined_hidden_detector_suite_v2"}`.
+`semantic_verification={"status":"optional","method":"owner_defined_hidden_detector_suite_v2"}`.
 The owner-authored JSON suite is not included in planner input. `meditate verify`
 runs every probe in three conditions—control, complete predecessor bundle, and
 complete candidate bundle—on the named Claude or Codex consumer CLI. The consumer
@@ -370,9 +388,11 @@ remain private local data. Bounded literal detectors score the plans after gener
 Detector protocol v3 uses alphanumeric command boundaries and clause-local negation filtering,
 so `npm test` does not match inside `pnpm test` and a prohibition such as “do not run npm test”
 is not counted as an execution.
-The receipt binds the pre-execution suite hash, verifier prompt/schema/system-prompt
+When run, the receipt binds the pre-execution suite hash, verifier prompt/schema/system-prompt
 hashes, agent/version, requested and resolved model, target hashes, plan hash,
-responses, and pass counts. Apply independently reconstructs and verifies it.
+responses, and pass counts. Apply independently reconstructs and verifies it. A failing receipt
+blocks apply; absence of a suite does not convert a fully archived, locally admitted edit into a
+no-op.
 
 A pass requires the candidate to satisfy every case on every repeat, forbids any
 per-case regression from predecessor to candidate, and requires each designated
@@ -387,9 +407,24 @@ A pass proves only the recorded cases on the recorded consumer agent/version/mod
 It is not universal behavioral equivalence, and the planner cannot select the
 criteria on which it is graded. Missing coverage for any changed source directive
 fails. Unchanged target bytes need no consumer-agent verification, but a fresh exact
-snapshot may still need its read-only semantic Analyst pass. Unattended mutation additionally
-requires the explicit config switch, probation history, and a structurally
-low-blast-radius plan; a verification receipt alone grants no ambient authority.
+snapshot may still need its read-only semantic Analyst pass. Reversible mutation requires a
+structurally low-blast-radius plan; a verification receipt alone grants no ambient authority.
+
+### v0.4.0 live reversible receipts
+
+- Disposable contradiction run `20260819T223808Z-edab9da1` used
+  `claude-sonnet-4-6`, replaced one one-file directive with a canonical `MUST` rule plus reason,
+  scope, and boundary, applied it atomically through `run --apply`, reported
+  `meditate restore 20260819T223808Z-edab9da1`, then restored exact pre-image SHA-256
+  `44121c12b2c9b266d77e901180010ccd6307e8e3b243a1d91e5a98edcdee588a`.
+- Disposable missing-rule run `20260819T223852Z-cb1dedc1` used the same resolved model,
+  admitted two independent durable history records, introduced a new absolute-path reporting
+  `MUST` directive into the exact configured target, applied it, reported its restore command,
+  then restored exact pre-image SHA-256
+  `5f6843e85957787c3ca965297b37480ff5698352839301e783d507bf82d3159b`.
+- Neither run used an owner suite, so `semantic_qualification.status=not_run`. They prove the
+  archive/apply/report/restore and new-rule introduction paths on real provider output; they do
+  not prove general behavioral equivalence.
 
 ### v0.3.0 live semantic receipts
 
@@ -514,11 +549,11 @@ overlap fails closed. The generated job is a dry-run by default: it inspects,
 plans, archives, and reports, but does not rewrite instructions.
 
 `meditate cron --apply` renders an explicit `run --apply` job. A changed run first
-executes the configured owner suite and stops if it fails; apply then still needs
-the unattended config switch, attended-history threshold, and low-blast-radius
-classification. A no-op exits successfully without verification or mutation.
-Cron cannot invent a suite, reuse another plan's receipt, or treat a prior attended
-hash as ambient authority.
+executes the configured owner suite when one exists and stops if it fails. Without a suite,
+low-blast-radius replacements and introductions use the same archive-first reversible classifier
+as an attended run. Consequential changes—credentials, permissions, hooks/settings, destructive
+or force operations, and automatic remote/deploy/publish/release behavior—still require exact
+attended approval and are not applied by cron. A no-op exits successfully without mutation.
 
 ## Why not a linter?
 
@@ -531,8 +566,8 @@ and [agentlinter.com](https://agentlinter.com/) describe static, AI, and
 session-aware checks and fixes; [Reporails](https://reporails.com/) offers local
 deterministic diagnostics and healing. Meditate's narrower distinction is total
 disposition of the configured directive set, semantic nomination from temporal
-interaction/Kindex evidence, typed report-only missing-rule hypotheses, and
-recoverable exact-hash apply—not a claim that these tools do nothing. “Total”
+interaction/Kindex evidence, typed reversible missing-rule introductions, and recoverable
+exact-hash apply—not a claim that these tools do nothing. “Total”
 means every configured pre-image record receives a disposition, not that every
 possible behavior is covered.
 

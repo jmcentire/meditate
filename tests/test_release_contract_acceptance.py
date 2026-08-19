@@ -39,20 +39,20 @@ def _normalized_text(path: Path) -> str:
     return " ".join(raw.lower().split())
 
 
-def test_package_and_pyproject_versions_are_v0_3_0() -> None:
+def test_package_and_pyproject_versions_are_v0_4_0() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert __version__ == "0.3.0"
-    assert pyproject["project"]["version"] == "0.3.0"
+    assert __version__ == "0.4.0"
+    assert pyproject["project"]["version"] == "0.4.0"
 
 
-def test_changelog_and_public_docs_expose_v0_3_0_with_bounded_qualification_claims() -> None:
+def test_changelog_and_public_docs_expose_v0_4_0_with_bounded_qualification_claims() -> None:
     surfaces = {
         "CHANGELOG.md": _normalized_text(ROOT / "CHANGELOG.md"),
         "docs/index.html": _normalized_text(ROOT / "docs" / "index.html"),
         "docs/llms-full.txt": _normalized_text(ROOT / "docs" / "llms-full.txt"),
     }
     for name, text in surfaces.items():
-        assert "v0.3.0" in text, f"{name} does not expose v0.3.0"
+        assert "v0.4.0" in text, f"{name} does not expose v0.4.0"
 
     for name in ("docs/index.html", "docs/llms-full.txt"):
         text = surfaces[name]
@@ -66,7 +66,7 @@ def test_changelog_and_public_docs_expose_v0_3_0_with_bounded_qualification_clai
     assert "successor plan" in changelog
 
 
-def test_public_release_surfaces_expose_v0_3_semantic_fixed_point_contract() -> None:
+def test_public_release_surfaces_expose_v0_4_reversible_fixed_point_contract() -> None:
     surfaces = {
         "CHANGELOG.md": _normalized_text(ROOT / "CHANGELOG.md"),
         "docs/index.html": _normalized_text(ROOT / "docs" / "index.html"),
@@ -88,18 +88,19 @@ def test_public_release_surfaces_expose_v0_3_semantic_fixed_point_contract() -> 
             "missing_rule",
         ):
             assert candidate_class in text
-        assert "write_authority=none" in text or "write_authority = none" in text
+        assert "write_authority=reversible" in text or "write_authority = reversible" in text
         assert "semantic analyst" in text and "drafter" in text
         assert "rfc 2119" in text
         assert "meditate verify" in text
         assert "planner" in text and ("never sees" in text or "never receives" in text)
         assert "kindex_required_failed" in text
-        assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?4\b", text)
-        assert "254f2afb" in text, f"{name}: missing Analyst prompt hash prefix"
-        assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?16\b", text)
-        assert "5f386309" in text, f"{name}: missing Drafter prompt hash prefix"
-        assert "meditate-analyst-parser-v5" in text or "parser v5" in text
-        assert "meditate-parser-v32" in text or "parser v32" in text
+        assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?5\b", text)
+        assert "307102f5" in text, f"{name}: missing Analyst prompt hash prefix"
+        assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?17\b", text)
+        assert "f6ad4ef5" in text, f"{name}: missing Drafter prompt hash prefix"
+        assert "meditate-analyst-parser-v6" in text or "parser v6" in text
+        assert "meditate-parser-v33" in text or "parser v33" in text
+        assert "restore" in text and "reversible" in text
         assert "not universal behavioral equivalence" in text
 
 
@@ -120,11 +121,11 @@ def test_docs_name_github_release_as_canonical_distribution_with_versioned_wheel
     wheel_url = re.search(
         (
             r"https://github\.com/[a-z0-9_.-]+/[a-z0-9_.-]+/releases/download/"
-            r"v0\.3\.0/meditate_agent-0\.3\.0-py3-none-any\.whl"
+            r"v0\.4\.0/meditate_agent-0\.4\.0-py3-none-any\.whl"
         ),
         raw,
     )
-    assert wheel_url, "public docs must expose the versioned v0.3.0 wheel install URL"
+    assert wheel_url, "public docs must expose the versioned v0.4.0 wheel install URL"
 
     assert re.search(
         r"(?:not|no).{0,60}pypi|pypi.{0,60}(?:not|no|unpublished)",

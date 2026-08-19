@@ -25,6 +25,7 @@ from .imports import build_import_graph
 from .plan import (
     LEGACY_SEMANTIC_VERIFICATION,
     PARSER_VERSION,
+    REQUIRED_SEMANTIC_VERIFICATION,
     SEMANTIC_VERIFICATION,
     SEMANTIC_VERIFICATION_METHOD,
 )
@@ -138,6 +139,7 @@ def _verified_artifacts(
     semantic = plan.get("semantic_verification")
     valid_semantic_states = semantic in (
         LEGACY_SEMANTIC_VERIFICATION,
+        REQUIRED_SEMANTIC_VERIFICATION,
         SEMANTIC_VERIFICATION,
     ) or semantic == {"status": "not_applicable", "method": SEMANTIC_VERIFICATION_METHOD}
     if not valid_semantic_states:
@@ -557,7 +559,7 @@ def apply_run(
     mode: str,
     approval_sha256: str | None = None,
 ) -> dict[str, Any]:
-    if mode not in {"attended", "unattended"}:
+    if mode not in {"attended", "reversible", "unattended"}:
         fail("invalid_apply_mode", f"Invalid apply mode: {mode}")
     with exclusive_lock(config.state_root / "meditate.lock"):
         run_dir, plan, manifest, state = _verified_artifacts(config, run_id)
@@ -617,9 +619,25 @@ def apply_run(
             fail("no_changes", f"Run {run_id} has no target changes to apply")
         from .verification import load_passed_verification
 
-        verification = load_passed_verification(run_dir, plan)
+        verification: dict[str, Any] = {
+            "status": "not_run",
+            "method": plan.get("semantic_verification", {}).get("method", ""),
+        }
+        verification_required = plan.get("semantic_verification") == REQUIRED_SEMANTIC_VERIFICATION
+        verification_present = (run_dir / "verification.json").exists() or (
+            run_dir / "verification-suite.json"
+        ).exists()
+        if verification_required or verification_present:
+            verification = load_passed_verification(run_dir, plan)
         plan_sha = str(plan["plan_sha256"])
-        if mode == "unattended":
+        if mode == "reversible":
+            if plan.get("minimum_apply_mode") != "unattended":
+                fail(
+                    "confirmation_required",
+                    f"This plan has consequential effects; apply it explicitly with "
+                    f"--approve {plan_sha}",
+                )
+        elif mode == "unattended":
             if not config.apply.allow_unattended_apply:
                 fail("unattended_disabled", "Configuration does not allow unattended apply")
             if plan.get("minimum_apply_mode") != "unattended":
@@ -758,7 +776,13 @@ def apply_run(
             "state": "applied",
             "plan_sha256": plan_sha,
             "mode": mode,
-            "approval": "plan_sha256" if mode == "attended" else "unattended_policy",
+            "approval": (
+                "plan_sha256"
+                if mode == "attended"
+                else "explicit_reversible_apply"
+                if mode == "reversible"
+                else "unattended_policy"
+            ),
             "minimum_apply_mode": plan.get("minimum_apply_mode"),
             "model_id": plan.get("model_id"),
             "prompt_version": plan.get("prompt_version"),
@@ -778,6 +802,7 @@ def apply_run(
                 {"path": target["logical_path"], "post_sha256": target["post_sha256"]}
                 for target in targets
             ],
+            "restore_command": f"meditate restore {run_id}",
             "at": _now(),
         }
         try:
