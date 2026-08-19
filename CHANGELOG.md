@@ -2,6 +2,65 @@
 
 All notable changes to Meditate are documented here.
 
+## 0.4.0 - 2026-08-19
+
+Meditate v0.4.0 closes the archive-only execution gap. A locally admitted,
+low-blast-radius directive repair now changes the configured instruction file after preserving
+its exact pre-image, reports exactly what changed, and emits the exact restore command. The
+fixed point remains stability: clean input is still a byte-identical successful no-op.
+
+### Added
+
+- Reversible missing-rule introduction. Evidence-backed `missing_rule` nominations that satisfy
+  explicit durability, active Kindex authority, or repeated independent correction groups can
+  compile into an exact configured target with `write_authority=reversible`.
+- `meditate apply RUN_ID --reversible`, with archive verification, current config/source/import
+  drift checks, same-directory atomic replacement, receipt-bound changed targets, and
+  `meditate restore RUN_ID` in every successful apply result.
+- A one-directive floor for nonzero churn budgets, preventing the ratio from making every repair
+  to a one-rule file impossible. `max_churn_ratio=0` remains a hard no-change setting.
+- A local consequence classifier. Credential/authentication, permission, hook/settings,
+  destructive/force, and automatic remote/publish/release/deploy changes require attended
+  approval bound to the exact plan SHA rather than reversible execution.
+- Explicit `action_required` behavior. `meditate run --apply` no longer reports a successful
+  `not_needed` result when semantic work is known but no target change is admissible.
+- Meaningful modality as part of the compiled directive contract. Every directive Meditate
+  introduces or materially rewrites uses one RFC 2119 operator plus reason and scope.
+  `ALWAYS` maps to `MUST`, `NEVER` to `MUST NOT`, and ambiguous `MAY NOT` is excluded. Existing
+  valid prose is not rewritten solely to add a keyword.
+
+### Changed
+
+- Drafter prompt v17 (`f6ad4ef5...`)/parser v33 and Analyst prompt v5
+  (`307102f5...`)/parser v6 bind the reversible execution and modality contracts into every new
+  plan/archive. Missing or ambiguous normative force may be an
+  `underspecified` candidate only when it changes the behavioral decision boundary.
+- Behavioral verification is optional additional evidence instead of a universal prerequisite.
+  A failed or stale receipt still blocks apply; no configured suite no longer strands a fully
+  archived, locally admitted change.
+- `run --apply` executes a configured owner suite when present, applies an eligible reversible
+  plan when absent, and exposes the exact confirmation or unresolved action otherwise.
+- Cron remains read-only by default. `cron --apply` can apply only the same bounded reversible
+  class; consequential plans require attended approval.
+
+### Safety boundary
+
+Rollback restores instruction-file bytes; it cannot undo downstream activity performed after
+another process consumes those instructions. That is why automated/event-driven execution,
+credentials, permissions, hooks/settings, destructive actions, and remote release/deploy effects
+remain behind the attended boundary.
+
+### Live v0.4.0 reversible receipts
+
+- `20260819T223808Z-edab9da1`: real `claude-sonnet-4-6` output replaced one
+  contradictory disposable directive, applied it through `run --apply`, emitted the restore
+  command, and restored exact pre-image SHA-256 `44121c12...`.
+- `20260819T223852Z-cb1dedc1`: real `claude-sonnet-4-6` output introduced one
+  evidence-grounded missing rule into a disposable target, applied it through `run --apply`,
+  emitted the restore command, and restored exact pre-image SHA-256 `5f6843e8...`.
+- Both receipts recorded `semantic_qualification.status=not_run`; they qualify reversible
+  execution and byte recovery, not downstream agent behavior.
+
 ## 0.3.0 - 2026-08-19
 
 Meditate v0.3.0 adds the semantic candidate boundary that v0.2.0 lacked. It ships two

@@ -58,6 +58,7 @@
         <li>active Kindex constraints, directives, decisions, and related provenance when Kindex is enabled.</li>
       </ul>
       <p>Histories, transcripts, auto-memory, and Kindex are read-only evidence. Meditate writes only the instruction targets named in the configuration.</p>
+      <p>A locally admitted low-blast-radius plan may be applied with <code>--reversible</code> or by an explicit <code>run --apply</code>. Before writing, Meditate preserves and hash-verifies the exact pre-image; the receipt states the changed targets and <code>meditate restore RUN_ID</code>. Consequential credential, permission, hook/settings, destructive, force, or automatic remote/release/deployment changes require exact attended approval. Restore recovers instruction-file bytes, but cannot undo a downstream action performed by another process after it consumed the changed instructions.</p>
 
       <h2>What can be sent to a model</h2>
       <p>Before any provider call, records are streamed through local parsing, deduplication, secret detection, redaction, deterministic ranking, temporal-breadth selection, and hard size/token limits. High-confidence secret-bearing records are excluded wholesale rather than sent with a replacement token.</p>
@@ -84,11 +85,11 @@
       <p>The Meditate CLI contains no product telemetry. This documentation site is a set of static files: it sets no cookies and loads no third-party fonts, scripts, images, or analytics. Because it is hosted by GitHub Pages, GitHub may process ordinary web-server request information under GitHub’s own privacy terms.</p>
 
       <h2>Operator responsibility</h2>
-      <p>The operator chooses the evidence sources, model provider, model ID, token budgets, retention period, writable targets, and whether a reviewed proposal is applied. Operators should review their model provider’s data-handling terms and avoid enabling transcript bodies unless the additional evidence is proportionate to the task.</p>
+      <p>The operator chooses the evidence sources, model provider, model ID, token budgets, retention period, writable targets, and whether <code>run --apply</code> or a direct apply command is invoked. Operators should review their model provider’s data-handling terms and avoid enabling transcript bodies unless the additional evidence is proportionate to the task.</p>
 
       <h2>Questions and changes</h2>
       <p>Privacy-affecting changes should be raised in the <a href="https://github.com/jmcentire/meditate/issues">project issue tracker</a>. The source version of this policy is available as <a href="https://github.com/jmcentire/meditate/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
-      <p class="privacy-meta">Last updated: August 19, 2026 · Applies to Meditate 0.3.x</p>
+      <p class="privacy-meta">Last updated: August 19, 2026 · Applies to Meditate 0.4.x</p>
     </article>
   </main>
 

@@ -4,9 +4,10 @@
 
 Build toward a locally operated behavioral-contract compiler and policy router that
 resolves identified defects in directives used by Claude Code and OpenAI Codex.
-Version 0.3 establishes two separate production boundaries: evidence-grounded
+Version 0.4 establishes two separate production boundaries: evidence-grounded
 semantic nomination, then bounded directive compilation over locally admitted
-candidates. Missing-rule promotion remains future work. Current prose is analyzed with
+candidates. Evidence-grounded missing rules can become reversible introductions into exact
+configured targets. Current prose is analyzed with
 temporally ordered interaction, memory, and Kindex—an optional local persistent
 knowledge graph exposed through `kin`—rather than only lexical duplication. Stability is the fixed point:
 a well-formed directive set must survive byte-identically, while a defective set
@@ -175,8 +176,8 @@ Meditate never invents a glob. Codex target interpretation follows the official
   semantic Analyst, optionally call the bounded Drafter, validate both structured
   outputs, and write a proposal/report. A fresh stable snapshot may use one Analyst
   call; its exact cache-backed repeats use zero calls. It changes no target.
-- `meditate verify RUN_ID`: run the owner-authored suite that was excluded from
-  planner input against control, predecessor, and candidate instruction bundles.
+- `meditate verify RUN_ID`: optionally run the owner-authored suite that was excluded
+  from planner input against control, predecessor, and candidate instruction bundles.
 - `meditate decisions RUN_ID`: verify an immutable archive and render its one
   pending `a`/`b`/`c`/custom authority question plus shell-quoted response forms
   and argv arrays that retain the selected config path.
@@ -184,15 +185,18 @@ Meditate never invents a glob. Codex target interpretation follows the official
   operator-asserted user authority and create a fresh read-only successor plan.
   With neither flag it prompts only on a TTY; it never edits the parent or a target.
 - `meditate apply RUN_ID`: revalidate source hashes, archive every target plus a
-  manifest, atomically replace targets, and emit an apply receipt.
+  manifest, atomically replace targets, and emit an apply receipt plus exact restore command.
+  Low-blast-radius changes use `--reversible`; consequential plans require `--approve PLAN_SHA256`.
 - `meditate run`: inspect + plan. Cron uses this surface. An explicit `--apply`
-  verifies a changed plan with the configured suite before requesting unattended apply.
+  runs a configured owner suite when present, then applies locally classified reversible work.
+  It never reports known unresolved semantic work as `not_needed`.
 - `meditate restore RUN_ID`: restore archived targets transactionally, refusing
   to overwrite post-run changes unless `--force` is given.
 - `meditate cron`: print a locked cron entry or check its dependencies. Meditate
   never edits the user's crontab.
 
-Dry-run is the default everywhere. A high-confidence secret match after local
+Planning is read-only by default; apply is an explicit command or `run --apply`. A
+high-confidence secret match after local
 redaction blocks the evidence packet before the first model call; model output is
 scanned again before it is persisted. Model failure, parse failure, surviving
 secret detection, missing evidence references, source drift, concurrent
@@ -231,7 +235,7 @@ Large corpora use a bounded pipeline:
    bounded immutable context. The total default call budget is two.
 5. Deterministic rendering and a post-image detector pass. A confirmed defect
    remaining in a changed post-image rejects the plan.
-6. Independent owner-authored behavioral qualification on the consumer agent;
+6. Optional independent owner-authored behavioral qualification on the consumer agent;
    that suite is not visible to the planner and cannot grant source authority.
 
 Source readers process JSONL line by line, bound individual record size, and do
@@ -282,6 +286,14 @@ a weaker spelling of `MUST`; the reason records why the rule exists so legitimat
 exceptions can be derived without appending an exception list. Scope is mandatory.
 One boundary example is optional only when it materially pins an applies/does-not-
 apply edge. It remains untrusted prose, not an executable test.
+
+Every directive Meditate introduces or materially rewrites uses exactly one of those
+five operators. Evidence saying `ALWAYS` compiles to `MUST`; `NEVER` compiles to
+`MUST NOT`; ambiguous `MAY NOT` is rejected rather than guessed. Existing valid prose
+is not churned solely to add a keyword. Missing or ambiguous force is an
+`underspecified` nomination only when it changes what the consuming agent may,
+should, or must do. This prevents modality laundering while keeping the generated
+contract explicit.
 
 Every change, including remove and escalate, must copy its `destination_target`
 byte-for-byte from `allowed_targets`. The string is opaque: the model may not
@@ -482,17 +494,18 @@ Same-target, same-heading existing-rule nominations may join the bounded Drafter
 candidate set. Local code inherits each admitted semantic candidate's complete evidence set and
 rejects unrelated model-supplied IDs. A single-source semantic observation without external
 evidence is report-only. Cross-target and cross-heading nominations are report-only. Missing
-rules are a distinct report-only output: the Drafter may compile RFC-shaped candidate
-prose, but local code assigns `write_authority=none`, excludes it from target rendering,
-and requires later explicit promotion plus owner-authored qualification. The wire record cites
+rules are distinct reversible introductions: the Drafter may compile RFC-shaped prose, while
+local code verifies the durable evidence threshold, assigns `write_authority=reversible`, renders
+only into an exact configured target, classifies downstream consequence, and archives the exact
+pre-image before any write. The wire record cites
 only an exact allowlisted nomination ID; local code inherits the nomination's immutable evidence
-set. Version 0.3 has no promotion command; the operator must deliberately author or promote the
-rule.
-The compiled artifact cannot serve as its own corroborating evidence.
+set. The compiled artifact cannot promote or corroborate itself: admission comes from local
+evidence, scope, authority, secret, and blast-radius checks.
 
-Promotion thresholds are explicit. A one-source existing-rule observation stays report-only
+Admission thresholds are explicit. A one-source existing-rule observation stays report-only
 until external evidence or corroborating current sources exist. A missing-rule hypothesis
-requires explicit operator promotion plus an owner-authored probe/counter-probe suite. An
+requires explicit durable evidence, active Kindex authority, or repeated independent correction
+groups before it becomes a reversible introduction. An
 escalation requires deliberate installation of the named enforcement surface plus qualification
 against the consuming agent's actual interception limits.
 
@@ -502,7 +515,7 @@ candidate, heading, or subject boundaries. After deterministic rendering,
 Meditate segments the complete post-image and rejects any changed plan that
 leaves a confirmed defect. A review candidate may remain when the model keeps it.
 Reports separately name detected, resolved, and unresolved classes and distinguish
-`stable_noop`, `semantic_review_required`, `new_rule_hypotheses`, `enforcement_candidates`,
+`stable_noop`, `semantic_review_required`, `reversible_resolution_ready`, `enforcement_candidates`,
 `reviewed_noop`, `drafter_rejected`, and a candidate requiring behavioral qualification.
 `reviewed_noop` means the Drafter deliberately preserved an admitted hypothesis; the
 nomination stays auditable but is not mislabeled as a confirmed unresolved defect.
@@ -528,8 +541,13 @@ destinations, deterministic typed rendering, bounded churn/safety size, secret
 screening, archive integrity, and source/config/import-graph freshness. It does
 not prove observable behavior.
 
+The churn budget has an absolute floor of one change whenever `max_churn_ratio` is nonzero.
+Otherwise a one-directive file would be definitionally unrepairable. Above that floor, the
+configured ratio still limits the number of changed pre-image directives; `0` remains a hard
+no-change setting.
+
 Every changed plan and manifest records
-`semantic_verification={"status":"required","method":"owner_defined_hidden_detector_suite_v2"}`.
+`semantic_verification={"status":"optional","method":"owner_defined_hidden_detector_suite_v2"}`.
 `meditate verify` loads an owner-authored suite from an explicit path or config;
 the suite bytes were never sent to the planner. Each probe/counter-probe runs in
 control, pre-image, and post-image conditions for the configured repeat count.
@@ -539,13 +557,14 @@ plan. Bounded local literal detectors derive observable actions after generation
 local assertions check required, forbidden, and ordered behavior. Verification
 protocol v3 uses alphanumeric command boundaries and clause-local negation filtering,
 so `npm test` cannot match inside `pnpm test` and a prohibition is not scored as an execution.
-The verifier requires suite coverage for every changed source directive and writes immutable
+When invoked, the verifier requires suite coverage for every changed source directive and writes immutable
 suite/verification artifacts plus JSON and Markdown reports.
 
 The receipt binds plan and pre-execution suite hashes, target pre/post hashes,
 verifier prompt/schema/system-prompt hashes, consumer agent, consumer CLI version,
 requested/resolved model, repeat count, case outcomes, and response hashes. Apply
-reconstructs those bindings and accepts only a passed exact receipt.
+reconstructs those bindings and accepts only a passed exact receipt when one exists. A failing
+receipt blocks apply; a missing optional suite does not block a locally admitted, recoverable edit.
 A candidate passes only when it satisfies every case on every repeat, no case's
 post count falls below its predecessor count, and each designated control is
 strictly weaker than the candidate. A predecessor miss is reported as a baseline
@@ -564,11 +583,24 @@ An exact validated Analyst result is cached by config, packet, model, prompt, sc
 and parser identity. Fresh semantic planning permits at most one Analyst and one
 Drafter call (`llm.max_calls = 2` by default). New configs use aggregate input/output
 defaults of 160,000/16,384 tokens across both; existing explicit budgets remain unchanged.
-Unattended
-apply remains a separate authority classification: it needs the explicit config
-switch, attended-history threshold, a low-blast-radius replacement-only shape,
-and the same passed receipt. Evidence allowlisting and model confidence cannot
-substitute for behavioral qualification.
+Reversible apply remains a separate local authority classification: it permits only a bounded
+number of low-blast-radius replacements or missing-rule introductions and rejects consequential
+credential, permission, hook/settings, destructive, force, or automatic remote/release/deploy
+language. Those plans require exact attended approval. Evidence allowlisting and model confidence
+cannot waive either classifier.
+
+### v0.4.0 live reversible receipts
+
+Disposable real-provider run `20260819T223808Z-edab9da1` used
+`claude-sonnet-4-6` to replace one contradictory directive with a canonical `MUST` record,
+applied the exact archived plan through `run --apply`, emitted its restore command, and restored
+pre-image SHA-256 `44121c12b2c9b266d77e901180010ccd6307e8e3b243a1d91e5a98edcdee588a`.
+Run `20260819T223852Z-cb1dedc1` admitted two independent durable interaction records,
+introduced a missing absolute-path reporting directive, applied it to the exact configured
+disposable target, and restored pre-image SHA-256
+`5f6843e85957787c3ca965297b37480ff5698352839301e783d507bf82d3159b`.
+Both recorded `semantic_qualification.status=not_run`; this is execution and exact-recovery
+evidence, not behavioral-equivalence evidence.
 
 ### v0.3.0 live semantic receipts
 
@@ -683,12 +715,11 @@ explicit working directory, bounded runtime, and an optional mode-0600 env file
 resolved at runtime. `meditate cron` emits an entry and `cron --check` validates
 the resolved executable, config, profile, current key source, Kindex command, and
 target paths; Meditate does not install the entry itself.
-The generated entry defaults to `run` without apply. Unattended mutation remains
-disabled by default. `cron --apply` renders a `run --apply` command that first
-executes the configured owner suite for a changed plan and stops on failure;
-the normal unattended config and probation gates still apply. Evidence
-allowlisting, a copied cron line, and attended probation do not constitute
-behavioral qualification.
+The generated entry defaults to `run` without apply. `cron --apply` renders a
+`run --apply` command. If an owner suite is configured, it runs first and a failure
+blocks the write. Otherwise only the low-blast-radius reversible classifier may
+authorize archive-first replacement or introduction. Consequential plans require
+exact attended approval and therefore do not mutate from cron.
 
 The initial local overlap detector has named, bounded heuristics only:
 `negation_pair` for the same normalized subject with opposite modal patterns,
@@ -700,11 +731,11 @@ call boundary.
 
 ## Release and distribution
 
-Package metadata and the runtime version are synchronized at `0.3.0`. The
+Package metadata and the runtime version are synchronized at `0.4.0`. The
 canonical public distribution surface is the versioned wheel attached to the
-`v0.3.0` GitHub Release:
+`v0.4.0` GitHub Release:
 
-`https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl`
+`https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl`
 
 The repository CI checks Ruff, strict mypy, pytest across supported Python
 versions, and an isolated wheel build. It does not publish. PyPI publication is
@@ -723,7 +754,7 @@ checks plus fixes; [Reporails](https://reporails.com/) advertises local
 deterministic diagnostics and healing. Meditate does not claim these tools do
 nothing. Its narrower product distinction is exact disposition coverage for every
 configured pre-image directive, cited semantic nomination from temporal interaction
-and Kindex evidence, report-only missing-rule hypotheses, and content-addressed,
+and Kindex evidence, reversible evidence-grounded missing-rule introductions, and content-addressed,
 recoverable exact-hash apply.
 
 The exact purported paper title `A Taxonomy of Agent Instruction Failures` by

@@ -8,11 +8,17 @@ import pytest
 from conftest import ConfigFactory
 from helpers import StageProvider, compiled_directive, inspection, keep_all
 
-from meditate.analyst import ANALYST_PROMPT_VERSION, merge_candidate_clusters, validate_analysis
+from meditate.analyst import (
+    ANALYST_PROMPT,
+    ANALYST_PROMPT_VERSION,
+    merge_candidate_clusters,
+    validate_analysis,
+)
 from meditate.candidates import derive_candidate_clusters
+from meditate.cli import _validated_plan_payload
 from meditate.models import Authority, EvidenceEvent
 from meditate.plan import create_plan
-from meditate.transaction import apply_run
+from meditate.transaction import apply_run, restore_run
 from meditate.util import MeditateError, sha256_text
 
 
@@ -195,9 +201,12 @@ def test_already_satisfied_semantic_nomination_is_a_reviewed_noop(
     assert plan.consolidation_preflight["review_candidates_unresolved"] == []
     assert paths[0].read_text(encoding="utf-8") == original
     assert plan.proposed_contents[str(paths[0])] == original
+    payload = _validated_plan_payload(config, plan)
+    assert payload["action_required"] is True
+    assert payload["apply_command"] is None
 
 
-def test_missing_rule_is_drafted_as_report_only_and_never_enters_target_bytes(
+def test_missing_rule_is_introduced_reversibly_and_restores_exact_preimage(
     config_factory: ConfigFactory,
 ) -> None:
     original = "# Style\n\n- Prefer concise explanations.\n"
@@ -263,19 +272,85 @@ def test_missing_rule_is_drafted_as_report_only_and_never_enters_target_bytes(
         provider=provider,
     )
 
-    assert plan.changed_directive_count == 0
+    assert plan.changed_directive_count == 1
     assert plan.new_rule_suggestion_count == 1
-    assert plan.consolidation_preflight["outcome"] == "new_rule_hypotheses"
-    assert plan.semantic_verification["status"] == "not_applicable"
-    assert plan.proposed_contents[str(paths[0])] == original
+    assert plan.consolidation_preflight["outcome"] == "reversible_change_ready"
+    assert plan.semantic_verification["status"] == "optional"
+    assert "Run `make verify`" in plan.proposed_contents[str(paths[0])]
     assert paths[0].read_text(encoding="utf-8") == original
     suggestion = plan.raw_plan["new_rule_suggestions"][0]
-    assert suggestion["candidate_only"] is True
-    assert suggestion["write_authority"] == "none"
-    assert suggestion["promotion_required"] is True
-    with pytest.raises(MeditateError) as raised:
-        apply_run(config, plan.run_id, mode="attended", approval_sha256=plan.plan_sha256)
-    assert raised.value.code == "no_changes"
+    assert suggestion["candidate_only"] is False
+    assert suggestion["write_authority"] == "reversible"
+    assert suggestion["promotion_required"] is False
+    assert suggestion["minimum_apply_mode"] == "unattended"
+    receipt = apply_run(config, plan.run_id, mode="reversible")
+    assert receipt["restore_command"] == f"meditate restore {plan.run_id}"
+    assert "Run `make verify`" in paths[0].read_text(encoding="utf-8")
+    restore_run(config, plan.run_id)
+    assert paths[0].read_text(encoding="utf-8") == original
+
+
+def test_consequential_missing_rule_requires_exact_confirmation(
+    config_factory: ConfigFactory,
+) -> None:
+    original = "# Style\n\n- Prefer concise explanations.\n"
+    config, (target,) = config_factory((original,))
+    event = _event(
+        "evt_secret_policy",
+        "From now on, never print API keys or credential values in reports.",
+    )
+    state = inspection(config, (event,))
+
+    def analyst(_packet: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "nominations": [
+                _nomination(
+                    candidate_class="missing_rule",
+                    domain="security",
+                    source_ids=[],
+                    evidence=[{"id": event.id, "quote": event.text}],
+                    intent="Never print API keys or credential values in reports.",
+                )
+            ],
+        }
+
+    def drafter(packet: dict[str, Any]) -> dict[str, Any]:
+        nomination = packet["semantic_analysis"]["nominations"][0]
+        return {
+            "schema_version": 1,
+            "keep": [],
+            "changes": [],
+            "new_rule_suggestions": [
+                {
+                    "nomination_id": nomination["id"],
+                    "compiled_directive": compiled_directive(
+                        "Print no API key or credential value in a report.",
+                        keyword="MUST NOT",
+                        reason="Secret disclosure persists beyond instruction rollback.",
+                        scope="Every report and command transcript.",
+                    ),
+                    "destination_target": packet["allowed_targets"][0],
+                    "heading_path": ["Security"],
+                    "reason": "The explicit durable security rule is absent.",
+                }
+            ],
+            "decision_request": None,
+            "unresolved_conflicts": [],
+        }
+
+    provider = StageProvider(analyst, drafter)
+    plan = create_plan(config, inspection=state, analyst_provider=provider, provider=provider)
+
+    assert plan.minimum_apply_mode == "attended"
+    suggestion = plan.raw_plan["new_rule_suggestions"][0]
+    assert suggestion["requires_confirmation"] is True
+    with pytest.raises(MeditateError) as caught:
+        apply_run(config, plan.run_id, mode="reversible")
+    assert caught.value.code == "confirmation_required"
+    assert target.read_text(encoding="utf-8") == original
+    apply_run(config, plan.run_id, mode="attended", approval_sha256=plan.plan_sha256)
+    assert "API key" in target.read_text(encoding="utf-8")
 
 
 def test_semantic_change_rejects_evidence_outside_its_admitted_candidate(
@@ -457,7 +532,7 @@ def test_structural_defect_remains_primary_when_a_missing_rule_is_also_reported(
     plan = create_plan(config, inspection=state, analyst_provider=provider, provider=provider)
 
     assert plan.new_rule_suggestion_count == 1
-    assert plan.consolidation_preflight["outcome"] == "reviewed_noop"
+    assert plan.consolidation_preflight["outcome"] == "reversible_change_ready"
     assert plan.consolidation_preflight["defects_unresolved"] == ["exact_duplicate"]
     assert plan.consolidation_preflight["new_rule_hypotheses"] == 1
 
@@ -547,6 +622,14 @@ def test_semantic_existing_rule_classes_become_review_candidates_not_facts(
     assert nominations[0]["authority"] == "nomination_only"
     assert nominations[0]["admission"] == "mutable_candidate"
     assert clusters[0].reason_codes == (f"semantic_{candidate_class}",)
+
+
+def test_analyst_modality_contract_requires_meaning_not_keyword_churn() -> None:
+    assert "meaningful normative force" in ANALYST_PROMPT
+    assert "mere absence of an RFC keyword" in ANALYST_PROMPT
+    assert "solely to add an ornamental keyword" in ANALYST_PROMPT
+    assert "`ALWAYS` and `NEVER`" in ANALYST_PROMPT
+    assert "ambiguous `MAY NOT`" in ANALYST_PROMPT
 
 
 def test_single_source_nomination_without_external_evidence_is_report_only(

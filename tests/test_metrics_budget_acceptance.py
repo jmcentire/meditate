@@ -238,11 +238,14 @@ def test_justified_aggregate_byte_growth_is_telemetry_not_a_failure(
 
     report_json_path, report_markdown_path = write_plan_report(config, plan)
     report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
-    for surface in (plan_json, manifest, report_json):
-        assert not any(
-            item.get("apply_command") for item in _dicts(surface) if "apply_command" in item
-        )
-    assert "meditate apply" not in report_markdown_path.read_text(encoding="utf-8").lower()
+    assert not any(
+        item.get("apply_command") for item in _dicts(plan_json) if "apply_command" in item
+    )
+    assert not any(
+        item.get("apply_command") for item in _dicts(manifest) if "apply_command" in item
+    )
+    assert any(item.get("apply_command") for item in _dicts(report_json) if "apply_command" in item)
+    assert "meditate apply" in report_markdown_path.read_text(encoding="utf-8").lower()
 
     qualify_plan(config, plan.run_id)
     receipt = apply_run(

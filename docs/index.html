@@ -45,21 +45,21 @@
       <div class="hero-orbit orbit-two" aria-hidden="true"></div>
       <div class="shell hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> v0.3.0 alpha · Semantic Analyst · Recoverable compilation</p>
+          <p class="eyebrow"><span class="status-dot"></span> v0.4.0 alpha · Semantic Analyst · Reversible execution</p>
           <h1>Rewrite the rule.<br><em>Not another exception.</em></h1>
           <p class="hero-lede"><strong>Authority before confidence.</strong> A fluent rewrite has no
             authority of its own; current instructions, explicit corrections, scope, and handoff
             boundaries come first.</p>
           <p class="hero-lede">
-            Meditate is building toward a behavioral-contract compiler and policy router for the
-            directives Claude Code and Codex load. Version 0.3 establishes two separate production
-            boundaries: evidence-grounded semantic nomination, then bounded directive compilation
-            over only locally admitted candidates. It reviews current prose with temporal
+            Meditate is a behavioral-contract compiler and policy router for the directives Claude
+            Code and Codex load. Version 0.4 joins evidence-grounded semantic nomination and bounded
+            directive compilation to archive-first reversible execution. It reviews current prose with temporal
             interactions and Kindex—an optional local persistent knowledge graph exposed through
             <code>kin</code>—for contradiction, supersession,
             under/over-specification, wrong scope, enforcement candidates, and missing rules.
-            Missing rules remain report-only. A well-formed file is a byte-identical no-op.
-            Changed plans must survive a planner-blind owner suite before any target write.
+            Evidence-grounded missing rules can become reversible introductions. A well-formed file
+            is a byte-identical no-op. Safe plans apply after exact archive/hash/drift checks and
+            print their restore command; consequential plans require exact attended approval.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="#start">Get started</a>
@@ -68,7 +68,7 @@
           <div class="hero-facts" aria-label="Project facts">
             <span>MIT licensed</span>
             <span>Dry-run by default</span>
-            <span>Missing rules report-only</span>
+            <span>Reversible missing rules</span>
             <span>No product telemetry</span>
           </div>
         </div>
@@ -86,11 +86,13 @@
     --model claude-sonnet-4-6 \
     --max-output-tokens 8192
 
-<span class="output">65 directives inspected</span>
-<span class="output">0 semantic nominations · stable_noop</span>
-<span class="output">1 Analyst call · 0 Drafter calls</span>
-<span class="output">exact repeat: cache hit · 0 model calls</span>
-<span class="safe">0 target files changed</span></code></pre>
+<span class="output">1 missing rule admitted · reversible_resolution_ready</span>
+<span class="output">1 target proposed · exact pre-image archived</span>
+
+<span class="comment"># Safe work changes the file; rollback stays explicit</span>
+<span class="prompt">$</span> meditate apply RUN_ID --reversible
+<span class="safe">1 target changed atomically</span>
+<span class="output">restore: meditate restore RUN_ID</span></code></pre>
         </div>
       </div>
     </section>
@@ -136,7 +138,7 @@
           <p>
             This exact-duplicate example shows the typed output shape. It does not prove that
             a boundary example is executable or that an arbitrary rewrite preserves behavior.
-            The owner-authored consumer-agent suite remains the oracle for changed plans.
+            An optional owner-authored consumer-agent suite adds bounded behavioral evidence.
           </p>
         </div>
       </div>
@@ -293,8 +295,8 @@
         <div class="boundary-note">
           <p class="boundary-title">The fixed point is stability, not shrinkage</p>
           <p>
-            Analyst prompt v4 (SHA-256 <code>254f2afb...</code>)/parser v5 and Drafter
-            prompt v16 (SHA-256 <code>5f386309...</code>)/parser v32 optimize defect
+            Analyst prompt v5 (SHA-256 <code>307102f5...</code>)/parser v6 and Drafter
+            prompt v17 (SHA-256 <code>f6ad4ef5...</code>)/parser v33 optimize defect
             resolution in this order: correctness, checkability, scope precision, then concision.
             Byte counts are telemetry, never the
             objective. A justified rationale may make a directive larger. Removing a directive
@@ -313,6 +315,15 @@
             the well-formed fixture do not drift (the first analysis is cached and exact repeats
             use no provider call), and every confirmed cluster in a multi-defect
             fixture must resolve in one successful plan.
+          </p>
+          <p>
+            Every directive Meditate introduces or materially rewrites carries one meaningful
+            RFC 2119 operator—<code>MUST</code>, <code>MUST NOT</code>, <code>SHOULD</code>,
+            <code>SHOULD NOT</code>, or <code>MAY</code>—plus a reason and scope.
+            <code>ALWAYS</code> compiles to <code>MUST</code>, <code>NEVER</code> to
+            <code>MUST NOT</code>, and ambiguous <code>MAY NOT</code> is excluded. Valid legacy
+            prose is not churned merely to add a keyword; missing force is an underspecification
+            only when it changes the behavioral decision boundary.
           </p>
         </div>
 
@@ -335,19 +346,20 @@
             Same-heading existing-rule nominations may enter the bounded Drafter packet.
             Local code inherits each admitted semantic candidate's complete evidence set and
             rejects unrelated model-supplied IDs. A single-source semantic observation without
-            external evidence is report-only. Cross-scope findings remain report-only. Missing-rule drafts have
-            <code>write_authority=none</code>, never enter target bytes, cannot apply, and require
-            later explicit promotion plus owner-authored qualification. The Drafter returns only
-            an exact allowlisted nomination ID; local code inherits its immutable evidence set.
-            Version 0.3 has no promotion command. With Kindex enabled and
+            external evidence is report-only. Cross-scope findings remain report-only. Missing-rule
+            drafts backed by explicit durability, active Kindex authority, or repeated independent
+            correction groups receive <code>write_authority=reversible</code>, enter only an exact
+            configured target, and archive the exact pre-image before write. The Drafter returns
+            only an exact allowlisted nomination ID; local code inherits its immutable evidence set.
+            With Kindex enabled and
             installed, every configured search and requested node read is required; failure is
             <code>kindex_required_failed</code>.
           </p>
           <p>
-            Promotion thresholds are explicit. A one-source existing-rule observation remains
+            Admission thresholds are explicit. A one-source existing-rule observation remains
             report-only until external evidence or corroborating current sources exist. A missing
-            rule requires explicit operator promotion plus an owner-authored probe/counter-probe
-            suite. An escalation requires deliberate enforcement installation plus qualification
+            rule must cross the durable-evidence threshold before reversible introduction. An
+            escalation requires deliberate enforcement installation plus qualification
             against that consumer's actual interception limits.
           </p>
           <p>
@@ -372,14 +384,15 @@
         <div class="boundary-note">
           <p class="boundary-title">Structural validation is not behavioral qualification</p>
           <p>
-            A changed plan starts with <code>semantic_verification: required</code>.
-            <code>meditate verify</code> runs an owner-authored suite that the planner never sees,
+            A changed plan starts with <code>semantic_verification: optional</code>.
+            <code>meditate verify</code> can run an owner-authored suite that the planner never sees,
             presents the consumer only neutral scenarios and opaque case references, scores its
             free-form ordered plans with private local literal detectors, binds verifier prompt,
             schema, model, runner, target, and response hashes into an immutable receipt, and
             requires coverage for every changed source directive. The candidate must pass every
             case on every repeat, never regress below its predecessor on a case, and outperform
-            each designated control. Predecessor misses remain visible as baseline gaps; candidate
+            each designated control. A failed receipt blocks apply; an absent suite does not strand
+            a locally admitted, fully recoverable edit. Predecessor misses remain visible as baseline gaps; candidate
             repairs remain visible as improvements. Codex runs in a fresh private
             <code>CODEX_HOME</code>. Verifier protocol v3 uses alphanumeric detector boundaries
             and clause-local negation filtering, so <code>npm test</code> cannot match inside
@@ -391,6 +404,21 @@
             A no-change plan records <code>semantic_verification: not_applicable</code>; a fresh
             snapshot may still use one read-only Analyst call. Exact validated repeats use its
             content-addressed cache and make zero provider calls.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">v0.4.0 live receipts: real changes, exact rollback</p>
+          <p>
+            Disposable <code>claude-sonnet-4-6</code> run
+            <code>20260819T223808Z-edab9da1</code> replaced one contradictory directive,
+            applied it atomically, printed its restore command, and restored exact pre-image
+            SHA-256 <code>44121c12...</code>. Run <code>20260819T223852Z-cb1dedc1</code>
+            introduced a missing absolute-path reporting <code>MUST</code> directive from two
+            independent durable history records, applied it, and restored exact pre-image
+            SHA-256 <code>5f6843e8...</code>. Both recorded
+            <code>semantic_qualification.status=not_run</code>: they prove reversible execution
+            and byte recovery, not downstream behavioral equivalence.
           </p>
         </div>
 
@@ -564,7 +592,7 @@
           <p class="eyebrow">Get started</p>
           <h2>Inspect first. Verify behavior before a changed apply.</h2>
           <p class="start-copy">
-            The canonical v0.3.0 public artifact is the versioned wheel attached to its GitHub
+            The canonical v0.4.0 public artifact is the versioned wheel attached to its GitHub
             Release. PyPI publication is not claimed, and CI does not publish. Contributors can
             still clone the repository for an editable install.
           </p>
@@ -575,7 +603,7 @@
             <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
           </div>
           <pre id="install-code"><code>python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.3.0/meditate_agent-0.3.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl
 .venv/bin/meditate init
 .venv/bin/meditate inspect</code></pre>
         </div>
@@ -595,12 +623,12 @@
               <tr><td><code>meditate init</code></td><td>Write a commented TOML configuration.</td><td>Config only</td></tr>
               <tr><td><code>meditate inspect</code></td><td>Inventory targets and evidence locally. No model call.</td><td>None</td></tr>
               <tr><td><code>meditate plan</code></td><td>Create and validate a bounded proposal and report.</td><td>Archives only</td></tr>
-              <tr><td><code>meditate verify</code></td><td>Run an owner-authored planner-blind suite on control, predecessor, and candidate bundles.</td><td>Verification artifacts only</td></tr>
+              <tr><td><code>meditate verify</code></td><td>Optionally run an owner-authored planner-blind suite on control, predecessor, and candidate bundles.</td><td>Verification artifacts only</td></tr>
               <tr><td><code>meditate decisions</code></td><td>Show one exact pending a/b/c/custom authority question and response argv.</td><td>None</td></tr>
               <tr><td><code>meditate decide</code></td><td>Transmit the exact asserted response and frozen context to Anthropic for a successor plan.</td><td>Archives only</td></tr>
-              <tr><td><code>meditate apply</code></td><td>Apply one archived plan with exact hash approval.</td><td>Allowlisted targets</td></tr>
+              <tr><td><code>meditate apply</code></td><td>Apply one archived plan with reversible classification or exact hash approval; print its restore command.</td><td>Allowlisted targets</td></tr>
               <tr><td><code>meditate restore</code></td><td>Restore archived pre-images after drift checks.</td><td>Archived targets</td></tr>
-              <tr><td><code>meditate run</code></td><td>Inspect and plan for cron; unattended mutation is semantically gated off.</td><td>None</td></tr>
+              <tr><td><code>meditate run</code></td><td>Inspect and plan; <code>--apply</code> writes reversible work or exits with the required action.</td><td>Optional allowlisted targets</td></tr>
               <tr><td><code>meditate cron</code></td><td>Print or validate a locked cron entry. Never installs it.</td><td>None</td></tr>
               <tr><td><code>meditate purge</code></td><td>Preview or explicitly erase a named run archive.</td><td>Explicit only</td></tr>
             </tbody>
@@ -609,7 +637,7 @@
         <div class="reference-links">
           <a href="https://github.com/jmcentire/meditate/blob/main/README.md">Full usage guide <span aria-hidden="true">↗</span></a>
           <a href="https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md">Design and authority contracts <span aria-hidden="true">↗</span></a>
-          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.3.0 changelog <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.4.0 changelog <span aria-hidden="true">↗</span></a>
           <a href="llms.txt">Agent-readable index <span aria-hidden="true">→</span></a>
         </div>
       </div>
@@ -621,7 +649,7 @@
         <h2>Your instruction file should be maintained like code—not accumulated like a chat log.</h2>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/jmcentire/meditate">Explore the repository</a>
-          <a class="button button-secondary" href="#start">Install v0.3.0</a>
+          <a class="button button-secondary" href="#start">Install v0.4.0</a>
         </div>
       </div>
     </section>

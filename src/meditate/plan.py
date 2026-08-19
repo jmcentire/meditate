@@ -56,8 +56,8 @@ from .util import (
 )
 from .verification import VERIFICATION_METHOD
 
-PARSER_VERSION = "meditate-parser-v32"
-PLAN_PROMPT_VERSION = "16"
+PARSER_VERSION = "meditate-parser-v33"
+PLAN_PROMPT_VERSION = "17"
 TOKEN_ESTIMATOR = "utf8_bytes_upper_bound_v1"
 MAX_DECISION_DEPTH = 3
 MAX_DECISION_SUBJECT_CHARS = 400
@@ -84,6 +84,10 @@ _DRAFTER_REJECTION_CODES = frozenset(
 MAX_CUSTOM_DECISION_CHARS = 2_000
 SEMANTIC_VERIFICATION_METHOD = VERIFICATION_METHOD
 SEMANTIC_VERIFICATION = {
+    "status": "optional",
+    "method": SEMANTIC_VERIFICATION_METHOD,
+}
+REQUIRED_SEMANTIC_VERIFICATION = {
     "status": "required",
     "method": SEMANTIC_VERIFICATION_METHOD,
 }
@@ -105,6 +109,12 @@ _EXTERNAL_VERIFICATION_CRITERION = re.compile(
     r"(?i)\b(?:approvals?|checks?|ci|project procedures?|tests?)\b"
 )
 _HIGH_IMPACT_ACTIONS = frozenset({"deploy", "merge", "publish", "push", "release"})
+_CONSEQUENTIAL_INSTRUCTION_CHANGE = re.compile(
+    r"(?i)\b(?:api[ -]?keys?|auth(?:entication|orization)?|credentials?|secrets?|tokens?|"
+    r"permissions?|hooks?|settings(?:\.json)?|delete|overwrite|force[- ]push|"
+    r"disable\s+(?:archive|backup|rollback|restore)|automatic(?:ally)?\s+"
+    r"(?:deploy|publish|push|release)|cron|scheduled|event[- ]driven)\b"
+)
 _QUALITY_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _REPEATED_PHRASE_WORDS = 8
 _MIN_EVIDENCE_QUOTE_CHARS = 12
@@ -588,9 +598,13 @@ TASK:
   reason, or boundary even if it is shorter.
 - Use RFC 2119-style terms with their real semantics when normative force matters: `MUST` and
   `MUST NOT` for invariants, `SHOULD` and `SHOULD NOT` for strong defeasible defaults whose
-  implications must be weighed, and `MAY` for genuine permission. Prefer a rule plus its reason
-  over a growing exception list. Where a known tension remains, state a terminating conflict
-  procedure rather than inviting open-ended reconciliation.
+  implications must be weighed, and `MAY` for genuine permission. Render evidence saying
+  `ALWAYS` as `MUST` and `NEVER` as `MUST NOT`; never use the ambiguous phrase `MAY NOT` as a
+  normative operator. Every directive you introduce or materially rewrite must use exactly one
+  of the five allowed keywords plus a reason and scope. Do not rewrite an otherwise sound legacy
+  directive solely to add a keyword. Prefer a rule plus its reason over a growing exception list.
+  Where a known tension remains, state a terminating conflict procedure rather than inviting
+  open-ended reconciliation.
 - `consolidation_candidates` is a deterministic local spend boundary, not a semantic verdict.
   A successful plan receives the complete non-overlapping candidate set so its post-image can be
   a fixed point. `exact_duplicate` is a confirmed local defect; `exception_lineage` is a review
@@ -612,8 +626,9 @@ TASK:
   the candidate's complete evidence set and rejects unrelated IDs.
 - A semantic nomination with `admission=suggestion_candidate` may support one entry in
   `new_rule_suggestions`. Draft a typed, specific, checkable directive only for that exact
-  missing-rule nomination. It is report-only: it has no source disposition, does not enter target
-  bytes, and cannot be applied. Copy `nomination_id` exactly from
+  missing-rule nomination. It is a reversible introduction rather than a source disposition:
+  Meditate may add it to the exact configured target after local validation, archives the exact
+  pre-image first, and reports the restore command. Copy `nomination_id` exactly from
   `allowed_missing_rule_nomination_ids`; do not return evidence IDs for a suggestion. Local code
   inherits the nomination's complete immutable evidence set. Use an exact configured destination.
   Return no suggestion when the evidence does not justify durable wording.
@@ -714,8 +729,8 @@ OUTPUT CONTRACT:
   non-relocations, leave relocation_basis empty.
 - `new_rule_suggestions` is separate from total disposition. Each entry must cite one known
   missing-rule nomination and may draft only its stable behavioral intent. Suggestions are
-  candidate-only, confer no authority, never modify proposed target bytes, and require later
-  explicit promotion plus behavioral qualification before they can become instructions. Return
+  locally grounded reversible introductions: they may modify only an exact configured instruction
+  target, and Meditate must preserve the exact pre-image and emit a restore command. Return
   only an exact `nomination_id` from `allowed_missing_rule_nomination_ids`; Meditate inherits the
   nomination's evidence locally.
 - For every semantic `replace`, return a `compiled_directive` with exactly five fields:
@@ -743,12 +758,13 @@ OUTPUT CONTRACT:
   source-only allowance does not apply to single-directive rewrites, remove, relocate, escalate,
   or a decision request. Preserve every source trigger, command, scope boundary, exception, and
   observable outcome; an independent owner suite, not your own claim, decides whether it survived.
-- Set minimum_apply_mode to attended for every change. Structural validation and evidence
-  allowlisting do not establish behavioral equivalence.
+- Set minimum_apply_mode to attended for every model-authored change. Meditate independently
+  classifies a bounded, consequence-reversible replace or introduction as eligible for explicit
+  `run --apply`; behavioral qualification remains optional evidence rather than a universal gate.
 - Protected directives must be kept.
-- Do not add a directive to a proposed target without superseding at least one source ID.
-  Report-only `new_rule_suggestions` are not target additions. Proposed directive count must not
-  grow.
+- Do not add a directive to a proposed target without either superseding at least one source ID or
+  citing one exact locally admitted missing-rule nomination. Directive count may grow only by the
+  number of validated missing-rule introductions in this plan.
 - If authority or scope cannot be resolved, keep the affected directive and report the issue in
   unresolved_conflicts. Never guess.
 - A model-authored recommendation is structurally grounded but not semantically verified. Never
@@ -1204,6 +1220,14 @@ def _normalize_replacement(text: str, source: Directive | None) -> str:
     return chosen
 
 
+def _bounded_change_limit(total_directives: int, ratio: float) -> int:
+    """Apply a ratio without making every one-directive repair impossible."""
+
+    if ratio <= 0:
+        return 0
+    return max(1, int(total_directives * ratio))
+
+
 def _sentence(value: str) -> str:
     chosen = value.strip()
     return chosen if chosen.endswith((".", "!", "?", ":", ";")) else chosen + "."
@@ -1613,7 +1637,7 @@ def _normalize_new_rule_suggestions(
     events: dict[str, EvidenceEvent],
     allowed_targets: set[str],
 ) -> list[dict[str, Any]]:
-    """Validate report-only drafts for admitted missing-rule hypotheses."""
+    """Validate reversible introductions for admitted missing-rule hypotheses."""
 
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         fail("invalid_new_rule_suggestion", "new_rule_suggestions must be an array of objects")
@@ -1733,6 +1757,9 @@ def _normalize_new_rule_suggestions(
                 "unsupported_normative_force",
                 f"New-rule suggestion {index} escalates evidence to an invariant",
             )
+        requires_confirmation = bool(
+            _CONSEQUENTIAL_INSTRUCTION_CHANGE.search("\n".join([*heading_path, rendered, reason]))
+        )
         normalized.append(
             {
                 "nomination_id": nomination_id,
@@ -1742,10 +1769,13 @@ def _normalize_new_rule_suggestions(
                 "heading_path": heading_path,
                 "evidence": citations,
                 "reason": reason.strip(),
-                "candidate_only": True,
-                "write_authority": "none",
-                "promotion_required": True,
-                "behavioral_qualification_required": True,
+                "candidate_only": False,
+                "write_authority": "reversible",
+                "promotion_required": False,
+                "behavioral_qualification_required": False,
+                "behavioral_qualification_status": "optional",
+                "minimum_apply_mode": "attended" if requires_confirmation else "unattended",
+                "requires_confirmation": requires_confirmation,
             }
         )
     return normalized
@@ -2297,6 +2327,8 @@ def _validate_and_render(
         events=events,
         allowed_targets=allowed_targets,
     )
+    if any(item["requires_confirmation"] for item in normalized_new_rule_suggestions):
+        overall_mode = "attended"
 
     replacements: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
     appends: dict[str, list[tuple[list[str], str]]] = defaultdict(list)
@@ -2314,6 +2346,13 @@ def _validate_and_render(
             replacements[directive.target].append((directive.start, directive.end, chosen))
         if change["action"] == "relocate":
             appends[destination].append((change["heading_path"], text))
+    for suggestion in normalized_new_rule_suggestions:
+        appends[suggestion["destination_target"]].append(
+            (
+                suggestion["heading_path"],
+                _normalize_replacement(suggestion["rendered_directive"], None),
+            )
+        )
 
     proposed: dict[str, str] = {}
     post_targets: list[TargetDocument] = []
@@ -2367,9 +2406,12 @@ def _validate_and_render(
                 scope_paths=target.scope_paths,
             )
         )
-    if post_count > pre_count:
+    allowed_post_count = pre_count + len(normalized_new_rule_suggestions)
+    if post_count > allowed_post_count:
         fail(
-            "directive_count_growth", f"Directive count would grow from {pre_count} to {post_count}"
+            "directive_count_growth",
+            "Directive count may grow only through validated missing-rule introductions: "
+            f"pre={pre_count} post={post_count} allowed={allowed_post_count}",
         )
     post_candidates = derive_candidate_clusters(
         InspectionResult(
@@ -2389,9 +2431,13 @@ def _validate_and_render(
             + ", ".join(remaining_confirmed),
         )
     churn = len(changed_ids) / max(1, pre_count)
-    if churn > config.safety.max_churn_ratio:
+    change_limit = _bounded_change_limit(pre_count, config.safety.max_churn_ratio)
+    if len(changed_ids) > change_limit:
         fail(
-            "excessive_churn", f"Plan churn {churn:.3f} exceeds {config.safety.max_churn_ratio:.3f}"
+            "excessive_churn",
+            f"Plan changes {len(changed_ids)} directives (ratio {churn:.3f}); "
+            f"configured limit is {change_limit} directives at "
+            f"max_churn_ratio={config.safety.max_churn_ratio:.3f}",
         )
 
     normalized = {
@@ -2413,7 +2459,7 @@ def _validate_and_render(
         proposed,
         overall_mode,
         blocked,
-        len(changed_ids),
+        len(changed_ids) + len(normalized_new_rule_suggestions),
         len(escalated_ids),
     )
 
@@ -2458,6 +2504,10 @@ def _plan_metrics(
         counter = escalated_by_target if change["action"] == "escalate" else changed_by_target
         for directive_id in change["source_ids"]:
             counter[directives[directive_id].target] += 1
+    for suggestion in operations.get("new_rule_suggestions", []):
+        destination = suggestion.get("destination_target")
+        if isinstance(destination, str):
+            changed_by_target[destination] += 1
 
     per_target: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
@@ -2589,7 +2639,7 @@ def _local_plan_summary(
         f"Changed directives: {changed_directives}. "
         f"Escalated directives: {escalated_directives}. "
         f"Semantic nominations: {nomination_count}. "
-        f"Report-only new-rule hypotheses: {suggestion_count}. "
+        f"Reversible new-rule introductions: {suggestion_count}. "
         f"Byte telemetry: {pre_bytes} pre to {post_bytes} post ({byte_delta:+d}); "
         "byte delta is not an objective. "
         f"Unresolved conflicts: {conflict_count}."
@@ -3058,21 +3108,45 @@ def create_plan(
         )
     }
     summary_metrics["directives"] = aggregate_metrics["pre_directives"]
-    unattended_shape = (
+    normalized_changes = normalized.get("changes", [])
+    normalized_suggestions = normalized.get("new_rule_suggestions", [])
+    writable_changes = [
+        change for change in normalized_changes if change.get("action") != "escalate"
+    ]
+    reversible_shape = (
         enforce_current_candidate_boundary
         and changed_count > 0
         and not blocked
         and normalized.get("decision_request") is None
         and not normalized.get("unresolved_conflicts")
         and operator_decision is None
-        and len(normalized.get("changes", [])) <= 2
-        and all(change.get("action") == "replace" for change in normalized.get("changes", []))
-        and changed_count / max(1, int(aggregate_metrics["pre_directives"])) <= 0.25
+        and len(writable_changes) + len(normalized_suggestions) <= 2
+        and all(
+            change.get("action") == "replace"
+            and not _CONSEQUENTIAL_INSTRUCTION_CHANGE.search(
+                "\n".join(
+                    [
+                        str(change.get("replacement", "")),
+                        str(change.get("reason", "")),
+                        *(str(item) for item in change.get("heading_path", [])),
+                    ]
+                )
+            )
+            for change in writable_changes
+        )
+        and all(
+            isinstance(item, dict) and not item.get("requires_confirmation")
+            for item in normalized_suggestions
+        )
+        and sum(len(change.get("source_ids", [])) for change in writable_changes)
+        <= _bounded_change_limit(int(aggregate_metrics["pre_directives"]), 0.25)
     )
-    if unattended_shape:
+    if reversible_shape:
         minimum_mode = "unattended"
-        for change in normalized["changes"]:
+        for change in writable_changes:
             change["minimum_apply_mode"] = "unattended"
+        for suggestion in normalized_suggestions:
+            suggestion["minimum_apply_mode"] = "unattended"
     prompt_sha256 = sha256_text(SYSTEM_PROMPT)
     semantic_verification = (
         dict(SEMANTIC_VERIFICATION)
@@ -3134,10 +3208,10 @@ def create_plan(
     elif proposed_resolution:
         preflight.update(
             {
-                "status": "defect_resolution_proposed",
+                "status": "reversible_resolution_ready",
                 "defects_resolved": resolved_defects,
                 "defects_unresolved": unresolved_defects,
-                "outcome": "candidate_requires_behavioral_qualification",
+                "outcome": "reversible_change_ready",
             }
         )
     elif escalated_count:
@@ -3190,15 +3264,6 @@ def create_plan(
                 "defects_resolved": [],
                 "defects_unresolved": detected_defects,
                 "outcome": "reviewed_noop",
-            }
-        )
-    elif suggestion_count:
-        preflight.update(
-            {
-                "status": "new_rule_hypotheses_reported",
-                "defects_resolved": [],
-                "defects_unresolved": unresolved_defects,
-                "outcome": "new_rule_hypotheses",
             }
         )
     elif nomination_count and not detected_defects:

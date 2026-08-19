@@ -350,9 +350,9 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
     llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
     combined = index + "\n" + llms_full
 
-    assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?4\b", combined)
-    assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?16\b", combined)
-    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?32\b", combined)
+    assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?5\b", combined)
+    assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?17\b", combined)
+    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?33\b", combined)
     assert re.search(
         r"summar(?:y|ies).{0,180}(?:deterministic|locally computed|validated data)|"
         r"(?:deterministic|locally computed).{0,180}summar(?:y|ies)",
@@ -399,7 +399,7 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
     )
     assert "reviewed_noop" in combined
     assert "semantic_review_required" in combined
-    assert "new_rule_hypotheses" in combined
+    assert "reversible_resolution_ready" in combined
     assert "exact_duplicate" in combined and "confirmed" in combined
     assert "exception_lineage" in combined and "review" in combined
     for candidate_class in (
@@ -412,12 +412,14 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
         "missing_rule",
     ):
         assert candidate_class in combined
-    assert "write_authority=none" in combined
+    assert "write_authority=reversible" in combined
     assert "non_idempotent_proposal" in combined
     assert re.search(r"(?:ten|10) iterations?.{0,100}(?:without drift|do not drift)", combined)
 
     for keyword in ("must", "must not", "should", "should not", "may"):
         assert f"`{keyword}`" in llms_full
+    assert "ambiguous `may not` is excluded" in llms_full
+    assert "not rewritten solely to add modality" in llms_full
     for field in ("normative_keyword", "rule", "reason", "scope", "boundary_example"):
         assert field in llms_full
     assert "rfc 2119" in combined
