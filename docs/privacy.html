@@ -46,7 +46,7 @@
         <p>There is no Meditate account, telemetry collector, analytics endpoint, or remote memory store. However, <code>plan</code> and <code>run</code> deliberately invoke Anthropic with user-derived content after local filtering.</p>
       </div>
 
-      <p><code>meditate inspect</code> is entirely local and makes no model call. <code>meditate plan</code> and <code>meditate run</code> invoke the explicitly configured Anthropic model when they reach planning. They never silently select a different provider or model.</p>
+      <p><code>meditate inspect</code> is entirely local and makes no model call. <code>meditate plan</code> and <code>meditate run</code> invoke the explicitly configured Anthropic model only when local preflight finds a consolidation candidate; a stable no-op makes zero calls. They never silently select a different provider or model.</p>
       <p><code>meditate decide</code> transmits the frozen parent context and exact selected archived option or byte-preserved custom response, plus bounded decision lineage, to Anthropic instead of transmitting newly appended live history. Anthropic's response becomes a fresh read-only successor plan. The input is recorded as operator-asserted user authority, but identity is not authenticated or attested, and Meditate cannot prove that an invoking agent faithfully relayed the user's real answer. <code>meditate decide</code> rejects a recognized high-confidence secret shape in a custom response before submission. Other option/custom text remains user-derived and is not anonymous or risk-free.</p>
 
       <h2>What the CLI may read</h2>
@@ -63,17 +63,20 @@
       <p>Before any provider call, records are streamed through local parsing, deduplication, secret detection, redaction, deterministic ranking, temporal-breadth selection, and hard size/token limits. High-confidence secret-bearing records are excluded wholesale rather than sent with a replacement token.</p>
       <p>The Anthropic request contains a system prompt, a constrained JSON output schema, and a canonical JSON packet. That packet contains:</p>
       <ul>
-        <li>the configured target path labels, target hashes, directive IDs, headings, scope metadata, and current directive text after local secret scanning/redaction;</li>
+        <li>the configured target path labels and hashes, mutable candidate directive IDs/text/metadata, and bounded related immutable context after local secret scanning/redaction; non-candidate directive IDs are not sent to the planner;</li>
         <li>selected evidence records in oldest-to-newest order, including their stable IDs, timestamps, source/authority metadata, scoring fields, and locally redacted text;</li>
         <li>the authority/comparison rules, allowed destination targets, bounded overlap candidates, and parser-degradation state.</li>
       </ul>
       <p>Unselected history records and records excluded for high-confidence secret shapes are not included in the request. The model still receives user-derived instruction and interaction text; “redacted” is a transformation with limits, not a claim that the transmitted content is anonymous or risk-free.</p>
 
+      <h2>Behavioral verification transmission</h2>
+      <p><code>meditate verify</code> is a separate model-backed operation. It sends owner-authored neutral probe/counter-probe scenarios with opaque case references and, for predecessor and candidate conditions, the complete archived instruction bundle to the selected local Claude or Codex CLI. Private action IDs, literal detector phrases, case descriptions, and required/forbidden/order assertions are not sent to the consumer. That CLI may transmit the material to its configured provider under the CLI’s own account and retention settings. The consolidation planner never receives the suite or verifier outcomes. Suite files are rejected when they contain a recognized high-confidence secret shape, but they remain user-authored content and are not anonymous. Codex verification replaces ambient <code>CODEX_HOME</code> with a fresh private directory, ignores user config and rules, and requires <code>OPENAI_API_KEY</code>; this keeps global <code>AGENTS.md</code>, memories, and configuration out of the control condition. The frozen suite and verification receipt are private local artifacts.</p>
+
       <h2>Credentials</h2>
-      <p>API keys are read at runtime from configured environment variables. Their values are not written to reports or archives. The supported Anthropic lookup order is <code>WANDER_ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, <code>JMC_ANTHROPIC_API_KEY</code>, then the deprecated compatibility alias documented in the README.</p>
+      <p>API keys are read at runtime from standard provider environment variables. Anthropic planning uses <code>ANTHROPIC_API_KEY</code>; clean-room Codex verification uses <code>OPENAI_API_KEY</code>. Their values are not written to plans, reports, or archives.</p>
 
       <h2>Local storage</h2>
-      <p><code>plan.json</code>, <code>manifest.json</code>, <code>evidence.json</code>, and run-specific JSON/Markdown reports are private local plan artifacts. Reports and JSONL summaries default to the operator’s XDG state directory; recoverable run archives default to the XDG data directory. Meditate requires private directory/file modes for this material and refuses unsafe state roots. Depending on the run, these artifacts contain the current decision request or bounded collision scope, the exact selected/custom response, and lineage. The append-only JSONL is summary-only: it retains request IDs, choice keys, hashes, and lineage depth, never the raw question, options, or custom response.</p>
+      <p><code>plan.json</code>, <code>manifest.json</code>, <code>evidence.json</code>, frozen <code>verification-suite.json</code>, <code>verification.json</code>, and run-specific JSON/Markdown reports are private local plan artifacts. Reports and JSONL summaries default to the operator’s XDG state directory; recoverable run archives default to the XDG data directory. Meditate requires private directory/file modes for this material and refuses unsafe state roots. Depending on the run, these artifacts contain the current decision request or bounded collision scope, the exact selected/custom response, private verifier assertions and detector phrases, derived verifier actions, and lineage. The append-only JSONL is summary-only: it retains request IDs, choice keys, hashes, and lineage depth, never the raw question, options, or custom response.</p>
       <p>Archive deletion is preview-only unless an exact run ID and <code>--execute</code> are supplied. Active recovery material requires an additional <code>--force</code>. During successor purge, its exact run-ID JSON and Markdown reports are deleted. The replay tombstone/marker retains only IDs and hashes; it does not retain raw response text. The append-only summary likewise retains only parent, request, and successor IDs, the conflict fingerprint, and plan/response hashes needed to prevent replay. A retained parent still contains its own archived question until separately purged. The tombstone also distinguishes explicit erasure from missing or corrupt state.</p>
 
       <h2>Telemetry and the documentation site</h2>
@@ -84,7 +87,7 @@
 
       <h2>Questions and changes</h2>
       <p>Privacy-affecting changes should be raised in the <a href="https://github.com/jmcentire/meditate/issues">project issue tracker</a>. The source version of this policy is available as <a href="https://github.com/jmcentire/meditate/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
-      <p class="privacy-meta">Last updated: August 18, 2026 · Applies to Meditate 0.1.x</p>
+      <p class="privacy-meta">Last updated: August 19, 2026 · Applies to Meditate 0.2.x</p>
     </article>
   </main>
 

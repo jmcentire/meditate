@@ -70,21 +70,10 @@ def resolve_anthropic_key(config: Config) -> tuple[SecretValue, tuple[str, ...]]
     def lookup(name: str) -> str:
         return os.environ.get(name, "").strip() or file_values.get(name, "").strip()
 
-    # Correct spelling is authoritative. The requested typo is accepted only as
-    # a deprecated compatibility alias so it does not become permanent policy.
-    for name in ("WANDER_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "JMC_ANTHROPIC_API_KEY"):
-        value = lookup(name)
-        if value:
-            return SecretValue(value, name), tuple(warnings)
-    typo = lookup("WANDER_ANTRHOPIC_API_KEY")
-    if typo:
-        warnings.append("deprecated_key_alias:WANDER_ANTRHOPIC_API_KEY")
-        return SecretValue(typo, "WANDER_ANTRHOPIC_API_KEY"), tuple(warnings)
-    fail(
-        "anthropic_key_missing",
-        "No Anthropic key found in WANDER_ANTHROPIC_API_KEY, ANTHROPIC_API_KEY, "
-        "JMC_ANTHROPIC_API_KEY, or deprecated WANDER_ANTRHOPIC_API_KEY",
-    )
+    value = lookup("ANTHROPIC_API_KEY")
+    if value:
+        return SecretValue(value, "ANTHROPIC_API_KEY"), tuple(warnings)
+    fail("anthropic_key_missing", "No Anthropic key found in ANTHROPIC_API_KEY")
 
 
 def _safe_error(exc: BaseException, secret: SecretValue) -> str:

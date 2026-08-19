@@ -24,6 +24,7 @@ from .plan import create_plan, inspect_state, inspection_dict
 from .report import append_log, decision_log_summary, write_inspection_report, write_plan_report
 from .transaction import apply_run, purge_run, restore_run
 from .util import SCHEMA_VERSION, MeditateError, exclusive_lock, fail
+from .verification import verify_run
 
 _DECISION_RELAY_PREFACE = (
     "The decision framing and recommendation are model-authored, untrusted, and advisory. "
@@ -114,7 +115,16 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
     changed_targets = _changed_target_count(config, plan.run_id)
     apply_command = (
         f"meditate apply {plan.run_id} --approve {plan.plan_sha256}"
-        if changed_targets and not plan.blocked_reasons
+        if changed_targets
+        and not plan.blocked_reasons
+        and plan.semantic_verification.get("status") == "passed"
+        else None
+    )
+    verify_command = (
+        f"meditate verify {plan.run_id}"
+        if changed_targets
+        and not plan.blocked_reasons
+        and plan.semantic_verification.get("status") == "required"
         else None
     )
     payload: dict[str, Any] = {
@@ -126,6 +136,7 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
         "prompt_version": plan.prompt_version,
         "prompt_sha256": plan.prompt_sha256,
         "semantic_verification": plan.semantic_verification,
+        "consolidation_preflight": plan.consolidation_preflight,
         "changed_directives": plan.changed_directive_count,
         "escalated_directives": plan.escalated_directive_count,
         "changed_targets": changed_targets,
@@ -150,6 +161,7 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
         "plan_report_json": str(plan_json),
         "plan_report_markdown": str(plan_markdown),
         "apply_command": apply_command,
+        "verify_command": verify_command,
     }
     if plan.decision_request is not None:
         decision_view = decision_payload(config, plan.run_id)
@@ -256,6 +268,18 @@ def _run_command(args: argparse.Namespace) -> int:
         _emit(payload, as_json=args.json)
         return 0
 
+    if args.command == "verify":
+        payload = verify_run(
+            config,
+            args.run_id,
+            suite_path=args.suite,
+            agent=args.agent,
+            model=args.consumer_model,
+            repeats=args.repeats,
+        )
+        _emit(payload, as_json=args.json)
+        return 0
+
     if args.command == "inspect":
         result = inspect_state(config)
         report_id, json_path, md_path = write_inspection_report(config, result)
@@ -281,6 +305,9 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.apply and payload["changed_targets"]:
             if payload["blocked_reasons"]:
                 fail("plan_blocked", "The generated plan is blocked and cannot be applied")
+            payload["verification"] = verify_run(config, str(payload["run_id"]))
+            if payload["verification"]["status"] != "passed":
+                fail("semantic_verification_failed", "The owner-authored sentinel suite failed")
             receipt = apply_run(config, str(payload["run_id"]), mode="unattended")
             payload["apply"] = receipt
         elif args.apply:
@@ -401,6 +428,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_model_options(plan)
 
+    verify = commands.add_parser(
+        "verify",
+        parents=[common],
+        help="Run a planner-blind owner-authored behavioral suite against a plan",
+    )
+    verify.add_argument("run_id")
+    verify.add_argument("--suite", type=Path, help="Owner-authored sentinel suite JSON")
+    verify.add_argument("--agent", choices=("claude", "codex"))
+    verify.add_argument("--consumer-model", help="Consumer model passed to the verifier CLI")
+    verify.add_argument("--repeats", type=int)
+
     decisions = commands.add_parser(
         "decisions", parents=[common], help="Show an archived pending authority question"
     )
@@ -425,7 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--apply",
         action="store_true",
-        help="Request unattended apply (rejected until semantic qualification exists)",
+        help="Verify with the configured owner suite, then request unattended apply",
     )
 
     apply = commands.add_parser("apply", parents=[common], help="Apply an archived exact plan")
@@ -434,7 +472,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument(
         "--unattended",
         action="store_true",
-        help="Request unattended mode (currently rejected: semantic qualification required)",
+        help="Request unattended mode after a passed owner-suite receipt",
     )
 
     restore = commands.add_parser("restore", parents=[common], help="Restore archived pre-images")

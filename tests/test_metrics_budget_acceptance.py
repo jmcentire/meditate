@@ -7,7 +7,14 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all, replace_matching
+from helpers import (
+    StubProvider,
+    compiled_directive,
+    inspection,
+    keep_all,
+    qualify_plan,
+    replace_matching,
+)
 
 from meditate.cli import main
 from meditate.models import Authority, EvidenceEvent, RunUsage
@@ -197,7 +204,7 @@ def test_target_and_aggregate_metrics_flow_through_plan_manifest_report_and_log(
     )
 
 
-def test_aggregate_byte_growth_archives_blocked_compression_regression(
+def test_justified_aggregate_byte_growth_is_telemetry_not_a_failure(
     config_factory: ConfigFactory,
 ) -> None:
     original = "# Reports\n\n- Keep reports concise.\n"
@@ -221,12 +228,12 @@ def test_aggregate_byte_growth_archives_blocked_compression_regression(
     provider.model = config.llm.model
     plan = create_plan(config, provider=provider, inspection=inspection(config, (evidence,)))
 
-    assert "compression_regression" in plan.blocked_reasons
+    assert plan.blocked_reasons == ()
     run_dir = config.data_root / "runs" / plan.run_id
     plan_json = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert "compression_regression" in plan_json["blocked_reasons"]
-    assert "compression_regression" in manifest["blocked_reasons"]
+    assert plan_json["blocked_reasons"] == []
+    assert manifest["blocked_reasons"] == []
     assert sum(_metric_value(record, "byte_delta") for record in manifest["targets"]) > 0
 
     report_json_path, report_markdown_path = write_plan_report(config, plan)
@@ -237,18 +244,19 @@ def test_aggregate_byte_growth_archives_blocked_compression_regression(
         )
     assert "meditate apply" not in report_markdown_path.read_text(encoding="utf-8").lower()
 
-    with pytest.raises(MeditateError) as caught:
-        apply_run(
-            config,
-            plan.run_id,
-            mode="attended",
-            approval_sha256=plan.plan_sha256,
-        )
-    assert caught.value.code == "compression_regression"
-    assert target.read_text(encoding="utf-8") == original
+    qualify_plan(config, plan.run_id)
+    receipt = apply_run(
+        config,
+        plan.run_id,
+        mode="attended",
+        approval_sha256=plan.plan_sha256,
+    )
+    assert receipt["state"] == "applied"
+    assert target.read_text(encoding="utf-8") != original
+    assert "useful diagnostic context" in target.read_text(encoding="utf-8")
 
 
-def test_one_directive_may_grow_when_aggregate_configured_bytes_decrease(
+def test_compiled_rationales_may_grow_multiple_targets_as_reported_telemetry(
     config_factory: ConfigFactory,
 ) -> None:
     originals = (
@@ -303,7 +311,7 @@ def test_one_directive_may_grow_when_aggregate_configured_bytes_decrease(
                 {
                     "action": "replace",
                     "source_ids": [source["id"]],
-                    "replacement": replacements[index],
+                    "compiled_directive": compiled_directive(replacements[index]),
                     "destination_target": target["target"],
                     "heading_path": source["heading_path"],
                     "evidence": [{"id": event["id"], "quote": event["text"]}],
@@ -330,7 +338,7 @@ def test_one_directive_may_grow_when_aggregate_configured_bytes_decrease(
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     byte_deltas = [_metric_value(record, "byte_delta") for record in manifest["targets"]]
     assert any(delta > 0 for delta in byte_deltas)
-    assert sum(byte_deltas) < 0
+    assert sum(byte_deltas) > 0
     assert "compression_regression" not in plan.blocked_reasons
     assert plan.changed_directive_count == 2
 
@@ -404,7 +412,7 @@ def test_cli_plan_json_exposes_metrics_and_configured_target_coverage(
     target.write_text(content, encoding="utf-8")
     config_path = tmp_path / "meditate.toml"
     config_path.write_text(_minimal_config_text(target, tmp_path), encoding="utf-8")
-    monkeypatch.setenv("WANDER_ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
 
     def complete(
         _provider: AnthropicProvider,
@@ -498,15 +506,14 @@ def _codex_config(
             encoding="utf-8",
         )
     config = replace(config, sources=replace(config.sources, agents=("codex",)))
-    if override == 40_000:
-        config = replace(
-            config,
-            llm=replace(
-                config.llm,
-                max_input_tokens=200_000,
-                max_total_input_tokens=200_000,
-            ),
-        )
+    config = replace(
+        config,
+        llm=replace(
+            config.llm,
+            max_input_tokens=200_000,
+            max_total_input_tokens=200_000,
+        ),
+    )
     return config
 
 

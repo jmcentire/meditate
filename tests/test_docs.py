@@ -100,6 +100,7 @@ def test_documented_commands_match_cli_surface() -> None:
         "init",
         "inspect",
         "plan",
+        "verify",
         "run",
         "apply",
         "restore",
@@ -343,13 +344,13 @@ def test_privacy_surfaces_disclose_decision_relay_storage_and_purge_boundaries()
         ), f"{surface}: missing no-raw-response purge disclosure"
 
 
-def test_public_docs_explain_deterministic_summary_and_compression_boundaries() -> None:
+def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() -> None:
     index = _visible_text(DOCS / "index.html")
     llms_full = (DOCS / "llms-full.txt").read_text(encoding="utf-8").lower()
     combined = index + "\n" + llms_full
 
-    assert re.search(r"prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?6\b", combined)
-    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?20\b", combined)
+    assert re.search(r"prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?10\b", combined)
+    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?25\b", combined)
     assert re.search(
         r"summar(?:y|ies).{0,180}(?:deterministic|locally computed|validated data)|"
         r"(?:deterministic|locally computed).{0,180}summar(?:y|ies)",
@@ -385,25 +386,37 @@ def test_public_docs_explain_deterministic_summary_and_compression_boundaries() 
         combined,
     )
 
-    assert "compression_regression" in combined
+    assert "fixed point is stability" in combined
+    assert "defect resolution" in combined
+    assert re.search(r"byte(?:s| counts?)?\s+(?:are|is).{0,40}telemetry", combined)
+    assert re.search(r"(?:output|directive).{0,80}(?:may|can).{0,40}grow", combined)
+    assert "stable_noop" in combined
+    assert re.search(r"stable(?:_noop| no-op).{0,140}zero (?:provider|model) calls?", combined)
+    assert "reviewed_noop" in combined
+    assert "exact_duplicate" in combined and "confirmed" in combined
+    assert "exception_lineage" in combined and "review" in combined
+    assert "non_idempotent_proposal" in combined
+    assert re.search(r"(?:ten|10) iterations?.{0,100}(?:without drift|do not drift)", combined)
+
+    for keyword in ("must", "must not", "should", "should not", "may"):
+        assert f"`{keyword}`" in llms_full
+    for field in ("normative_keyword", "rule", "reason", "scope", "boundary_example"):
+        assert field in llms_full
+    assert "rfc 2119" in combined
+    assert "boundary example remains untrusted prose" in combined
+
+    assert "meditate verify" in combined
+    assert "owner-authored" in combined and "planner never" in combined
+    for condition in ("control", "predecessor", "candidate"):
+        assert condition in combined
     assert re.search(
-        r"(?:aggregate|total|configured[- ]target).{0,100}byte.{0,100}"
-        r"(?:grow|increase|positive)",
+        r"pass(?:ed)? .{0,100}(?:recorded|owner-selected).{0,100}(?:cases|suite)",
         combined,
     )
-    assert re.search(
-        r"compression_regression.{0,180}(?:no apply command|cannot be applied|apply.{0,40}reject)|"
-        r"(?:no apply command|cannot be applied|apply.{0,40}reject)"
-        r".{0,180}compression_regression",
-        combined,
-    )
-    assert re.search(
-        r"(?:one|single|individual).{0,80}directive.{0,100}(?:may|can).{0,40}(?:grow|longer)"
-        r".{0,180}aggregate.{0,100}(?:decrease|shrink)|"
-        r"aggregate.{0,100}(?:decrease|shrink).{0,180}"
-        r"(?:one|single|individual).{0,80}directive.{0,100}(?:may|can).{0,40}(?:grow|longer)",
-        combined,
-    )
+    assert "not universal behavioral equivalence" in combined
+
+    assert "kindex_required_failed" in combined
+    assert re.search(r"kindex.{0,160}(?:every|all).{0,80}(?:read|search).{0,80}required", combined)
 
 
 def test_public_surfaces_contain_no_raw_personal_artifacts_or_live_secrets() -> None:

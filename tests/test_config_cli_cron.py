@@ -143,25 +143,15 @@ def test_module_entrypoint_propagates_cli_failure_status(tmp_path: Path) -> None
     assert json.loads(result.stderr)["error"] == "config_missing"
 
 
-def test_key_precedence_prefers_correct_name_and_warns_for_typo_only(
+def test_anthropic_key_uses_only_provider_generic_name(
     config_factory: ConfigFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _paths = config_factory()
-    for name in (
-        "WANDER_ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "JMC_ANTHROPIC_API_KEY",
-        "WANDER_ANTRHOPIC_API_KEY",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("WANDER_ANTRHOPIC_API_KEY", "typo-value")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-generic-value")
     secret, warnings = resolve_anthropic_key(config)
-    assert secret.source == "WANDER_ANTRHOPIC_API_KEY"
-    assert warnings == ("deprecated_key_alias:WANDER_ANTRHOPIC_API_KEY",)
-    monkeypatch.setenv("WANDER_ANTHROPIC_API_KEY", "correct-value")
-    secret, warnings = resolve_anthropic_key(config)
-    assert secret.source == "WANDER_ANTHROPIC_API_KEY"
-    assert secret.value == "correct-value"
+    assert secret.source == "ANTHROPIC_API_KEY"
+    assert secret.value == "provider-generic-value"
     assert not warnings
 
 
@@ -170,11 +160,11 @@ def test_cron_entry_is_dry_by_default_and_never_contains_key(
 ) -> None:
     config, _paths = config_factory()
     profile = tmp_path / "profile"
-    profile.write_text("export WANDER_ANTHROPIC_API_KEY=do-not-print-this\n", encoding="utf-8")
-    monkeypatch.setenv("WANDER_ANTHROPIC_API_KEY", "do-not-print-this")
+    profile.write_text("export ANTHROPIC_API_KEY=do-not-print-this\n", encoding="utf-8")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "do-not-print-this")
     checks = check_cron_environment(config, profile=profile)
     assert checks["ok"] is True
-    assert checks["anthropic_key_source"] == "WANDER_ANTHROPIC_API_KEY"
+    assert checks["anthropic_key_source"] == "ANTHROPIC_API_KEY"
     entry = render_cron_entry(
         config,
         schedule="0 3 * * 0",

@@ -165,6 +165,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "prompt_version": plan.prompt_version,
         "prompt_sha256": plan.prompt_sha256,
         "semantic_verification": plan.semantic_verification,
+        "consolidation_preflight": plan.consolidation_preflight,
         "decision_request": plan.decision_request,
         "operator_decision": plan.operator_decision,
         "parent_plan_sha256": plan.parent_plan_sha256,
@@ -199,6 +200,8 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
                 "source_ids": item["source_ids"],
                 "destination_target": item["destination_target"],
                 "reason": item["reason"],
+                "defect_classes": item.get("defect_classes", []),
+                "compiled_directive": item.get("compiled_directive", {}),
                 "minimum_apply_mode": item["minimum_apply_mode"],
                 "evidence_ids": [citation["id"] for citation in item["evidence"]],
                 "baseline_support": item.get("baseline_support", []),
@@ -225,6 +228,25 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         f"- Resolved model ID: `{plan.model_id}`",
         f"- Prompt version: `{plan.prompt_version}`",
         f"- Prompt SHA-256: `{plan.prompt_sha256}`",
+        (
+            "- Consolidation preflight: "
+            f"`{_safe_code(str(plan.consolidation_preflight.get('status', 'unknown')))}`; "
+            f"clusters {plan.consolidation_preflight.get('clusters', 0)}; "
+            f"provider called "
+            f"{str(plan.consolidation_preflight.get('provider_called', False)).lower()}; "
+            f"estimated input bytes avoided "
+            f"{plan.consolidation_preflight.get('estimated_input_tokens_avoided', 0)}"
+        ),
+        (
+            "- Defect outcome: "
+            f"`{_safe_code(str(plan.consolidation_preflight.get('outcome', 'unknown')))}`; "
+            "detected "
+            f"{', '.join(plan.consolidation_preflight.get('defect_classes', [])) or 'none'}; "
+            "resolved "
+            f"{', '.join(plan.consolidation_preflight.get('defects_resolved', [])) or 'none'}; "
+            "unresolved "
+            f"{', '.join(plan.consolidation_preflight.get('defects_unresolved', [])) or 'none'}"
+        ),
         "- Semantic verification: "
         f"`{plan.semantic_verification.get('status', '')}` via "
         f"`{plan.semantic_verification.get('method', '')}`",
@@ -233,9 +255,9 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         f"- Directive delta: {plan.metrics.get('directive_delta', 0):+d}",
         f"- Changed directives: {plan.changed_directive_count}",
         f"- Escalated directives: {plan.escalated_directive_count}",
-        f"- Pre bytes: {plan.metrics.get('pre_bytes', 0)}",
-        f"- Post bytes: {plan.metrics.get('post_bytes', 0)}",
-        f"- Byte delta: {plan.metrics.get('byte_delta', 0):+d}",
+        f"- Byte telemetry — pre: {plan.metrics.get('pre_bytes', 0)}",
+        f"- Byte telemetry — post: {plan.metrics.get('post_bytes', 0)}",
+        f"- Byte telemetry — delta: {plan.metrics.get('byte_delta', 0):+d}",
         f"- Pre lines: {plan.metrics.get('pre_lines', 0)}",
         f"- Post lines: {plan.metrics.get('post_lines', 0)}",
         f"- Line delta: {plan.metrics.get('line_delta', 0):+d}",
@@ -258,8 +280,9 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             f"{plan.usage.actual_output_tokens} output"
         ),
         "",
-        "Structural validation is not behavioral qualification. Human review remains required; "
-        "until an owner-authored behavioral suite exists, every change is attended-only.",
+        "Structural validation is not behavioral qualification. Every changed plan remains "
+        "inapplicable until a frozen owner-authored probe/counter-probe suite passes; the planner "
+        "never receives that suite or its results.",
         "",
         "## Summary",
         "",
@@ -359,6 +382,8 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
                 f"- Destination: `{_safe_code(change['destination_target'])}`",
                 f"- Apply mode: `{change['minimum_apply_mode']}`",
                 f"- Reason: {_safe_markdown(change['reason'])}",
+                "- Defect classes: "
+                + (", ".join(f"`{item}`" for item in change.get("defect_classes", [])) or "none"),
                 f"- Relocation basis: `{change.get('relocation_basis', '')}`",
                 f"- Candidate only: `{str(change.get('candidate_only', False)).lower()}`",
                 "- Evidence:",
@@ -372,6 +397,23 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
                     f"- Locally computed lineage depth: {change['lineage_depth']}",
                     "- Report-only: source prose is preserved byte-for-byte; Meditate does not "
                     "write hooks or settings.",
+                ]
+            )
+        compiled = change.get("compiled_directive", {})
+        if isinstance(compiled, dict) and any(compiled.values()):
+            sections.extend(
+                [
+                    "- Normative keyword: "
+                    f"`{_safe_code(str(compiled.get('normative_keyword', '')))}`",
+                    f"- Rule: {_safe_markdown(str(compiled.get('rule', '')))}",
+                    f"- Directive rationale: {_safe_markdown(str(compiled.get('reason', '')))}",
+                    f"- Scope: {_safe_markdown(str(compiled.get('scope', '')))}",
+                    "- Boundary example: "
+                    + (
+                        _safe_markdown(str(compiled.get("boundary_example", "")))
+                        if compiled.get("boundary_example")
+                        else "none"
+                    ),
                 ]
             )
         for citation in change["evidence"]:
@@ -444,6 +486,7 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             "prompt_version": plan.prompt_version,
             "prompt_sha256": plan.prompt_sha256,
             "semantic_verification": plan.semantic_verification,
+            "consolidation_preflight": plan.consolidation_preflight,
             "parent_plan_sha256": plan.parent_plan_sha256,
             "parent_packet_sha256": plan.parent_packet_sha256,
             **decision_log_summary(

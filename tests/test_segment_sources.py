@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from conftest import ConfigFactory
 
-from meditate.config import SourceConfig
+import meditate.sources as sources_module
+from meditate.config import KindexConfig, SourceConfig
 from meditate.segment import segment_markdown
 from meditate.sources import collect_events
 from meditate.util import MeditateError
@@ -43,14 +46,15 @@ two lines.
         assert content[directive.start : directive.end] == directive.raw
 
 
-def test_segmenter_ids_are_stable_and_duplicate_directives_fail() -> None:
+def test_segmenter_ids_are_stable_and_duplicate_directives_are_distinct() -> None:
     content = "# Rules\n\n- Same.\n"
     first = segment_markdown(content, logical_path="~/CLAUDE.md")
     second = segment_markdown(content, logical_path="~/CLAUDE.md")
     assert [item.id for item in first] == [item.id for item in second]
-    with pytest.raises(MeditateError, match="Duplicate directive IDs") as caught:
-        segment_markdown("# Rules\n\n- Same.\n- Same.\n", logical_path="~/CLAUDE.md")
-    assert caught.value.code == "duplicate_directive_id"
+    duplicates = segment_markdown("# Rules\n\n- Same.\n- Same.\n", logical_path="~/CLAUDE.md")
+    repeated = segment_markdown("# Rules\n\n- Same.\n- Same.\n", logical_path="~/CLAUDE.md")
+    assert len({item.id for item in duplicates}) == 2
+    assert [item.id for item in duplicates] == [item.id for item in repeated]
 
 
 def test_claude_history_is_streamed_ordered_and_secret_records_are_excluded(
@@ -161,3 +165,42 @@ def test_transcript_ingestion_is_opt_in(config_factory: ConfigFactory, tmp_path:
     enabled = replace(config, sources=replace(base, include_transcripts=True))
     events, _stats, _warnings = collect_events(enabled)
     assert [event.session_id for event in events] == ["transcript-session"]
+
+
+def test_installed_enabled_kindex_is_a_required_evidence_source(
+    config_factory: ConfigFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _targets = config_factory()
+    config = replace(
+        config,
+        kindex=KindexConfig(enabled=True, queries=("durable preferences",)),
+    )
+    monkeypatch.setattr(sources_module.shutil, "which", lambda _command: "/usr/bin/kin")
+
+    def fail_search(*_args: object, **_kwargs: object) -> object:
+        raise subprocess.CalledProcessError(1, ["kin", "search"])
+
+    monkeypatch.setattr(sources_module.subprocess, "run", fail_search)
+    with pytest.raises(MeditateError) as caught:
+        collect_events(config)
+    assert caught.value.code == "kindex_required_failed"
+
+
+def test_installed_enabled_kindex_executes_every_configured_query(
+    config_factory: ConfigFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _targets = config_factory()
+    queries = ("durable preferences", "instruction adherence")
+    config = replace(config, kindex=KindexConfig(enabled=True, queries=queries))
+    monkeypatch.setattr(sources_module.shutil, "which", lambda _command: "/usr/bin/kin")
+    calls: list[list[str]] = []
+
+    def successful_search(argv: list[str], **_kwargs: object) -> object:
+        calls.append(argv)
+        return SimpleNamespace(stdout="[]")
+
+    monkeypatch.setattr(sources_module.subprocess, "run", successful_search)
+    events, _stats, warnings = collect_events(config)
+    assert not events
+    assert not warnings
+    assert [call[2] for call in calls] == list(queries)

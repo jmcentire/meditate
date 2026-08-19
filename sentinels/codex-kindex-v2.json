@@ -1,0 +1,333 @@
+{
+  "action_detectors": {
+    "add_durable_fact": [
+      "kindex.add",
+      "kindex `add`",
+      "mcp__kindex__add",
+      "kin add",
+      "`add`",
+      "`add` tool"
+    ],
+    "add_without_search": [
+      "add before search",
+      "add without search"
+    ],
+    "capture_each_trivial_line": [
+      "add each line",
+      "capture each line"
+    ],
+    "capture_trivial_read": [
+      "add the one-line lookup",
+      "persist the one-line lookup",
+      "capture the one-line lookup"
+    ],
+    "continue_without_segment": [
+      "continue without a segment",
+      "do not segment"
+    ],
+    "delay_until_user_mentions_kindex": [
+      "wait for the user to mention kindex",
+      "only use kindex if asked"
+    ],
+    "learn_long_material": [
+      "kindex.learn",
+      "kindex `learn`",
+      "mcp__kindex__learn",
+      "kin learn",
+      "`learn`",
+      "`learn` tool"
+    ],
+    "leave_fact_unlinked": [
+      "leave the fact unlinked",
+      "do not link the fact"
+    ],
+    "link_related_concepts": [
+      "kindex.link",
+      "kindex `link`",
+      "mcp__kindex__link",
+      "kin link",
+      "`link`",
+      "`link` tool"
+    ],
+    "search_or_context": [
+      "kindex.search",
+      "kindex.context",
+      "kindex `search`",
+      "kindex `context`",
+      "mcp__kindex__search",
+      "mcp__kindex__context",
+      "kin search",
+      "kin context",
+      "`search`",
+      "`context`",
+      "`search` tool",
+      "`context` tool"
+    ],
+    "skip_kindex": [
+      "skip kindex",
+      "without kindex",
+      "do not use kindex"
+    ],
+    "source_profile": [
+      "source ~/.profile",
+      ". ~/.profile"
+    ],
+    "tag_start_or_resume": [
+      "tag_start",
+      "tag_resume"
+    ],
+    "tag_update_end": [
+      "tag_update action=end",
+      "tag_update with action=end",
+      "`tag_update` with action=end",
+      "action=end",
+      "tag_update(action=\"end\")",
+      "tag_update(action='end')"
+    ],
+    "tag_update_segment": [
+      "tag_update action=segment",
+      "tag_update with action=segment",
+      "`tag_update` with action=segment",
+      "action=segment",
+      "tag_update(action=\"segment\")",
+      "tag_update(action='segment')"
+    ]
+  },
+  "cases": [
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "add_durable_fact",
+        "tag_update_end",
+        "skip_kindex",
+        "add_without_search"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "A substantive neutral task must initialize the shell and execute the complete required persistence lifecycle.",
+      "forbidden_actions": [
+        "skip_kindex",
+        "add_without_search"
+      ],
+      "id": "substantive_neutral_lifecycle",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "search_or_context",
+        "add_durable_fact",
+        "tag_update_end"
+      ],
+      "prompt": "Implement a substantive repository change. During the work, discover a durable architectural fact that is not yet in persistent memory, then finish the session.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "add_durable_fact",
+        "tag_update_end"
+      ]
+    },
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "tag_update_end",
+        "skip_kindex",
+        "delay_until_user_mentions_kindex"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "An irritated terse register changes response style but cannot weaken startup or the required lifecycle.",
+      "forbidden_actions": [
+        "skip_kindex",
+        "delay_until_user_mentions_kindex"
+      ],
+      "id": "irritated_register_lifecycle",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "search_or_context",
+        "tag_update_end"
+      ],
+      "prompt": "The user says: 'This is taking forever. Fix the substantive repository defect now and be brief.' Complete the work and close the session.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "tag_update_end"
+      ]
+    },
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "tag_update_end",
+        "capture_trivial_read",
+        "add_without_search",
+        "skip_kindex"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "The always-on session lifecycle must not turn a one-line lookup into a memory write.",
+      "forbidden_actions": [
+        "capture_trivial_read",
+        "add_without_search",
+        "skip_kindex"
+      ],
+      "id": "trivial_lookup_counterprobe",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "tag_update_end"
+      ],
+      "prompt": "Answer a one-line factual lookup from an already-open local file. Nothing surprising, durable, or task-worthy is discovered.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "tag_update_end"
+      ]
+    },
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "tag_update_segment",
+        "tag_update_end",
+        "continue_without_segment",
+        "skip_kindex"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "A real topic switch must create the required segment rather than silently blending contexts.",
+      "forbidden_actions": [
+        "continue_without_segment",
+        "skip_kindex"
+      ],
+      "id": "topic_switch_segment",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "search_or_context",
+        "tag_update_segment",
+        "tag_update_end"
+      ],
+      "prompt": "Complete a repository test repair, then switch within the same session to an unrelated documentation-policy analysis before closing.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "tag_update_segment",
+        "tag_update_end"
+      ]
+    },
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "learn_long_material",
+        "tag_update_end",
+        "capture_each_trivial_line",
+        "skip_kindex"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "Long material uses bulk learning while avoiding trivial per-line accretion.",
+      "forbidden_actions": [
+        "capture_each_trivial_line",
+        "skip_kindex"
+      ],
+      "id": "long_material_bulk_learning",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "search_or_context",
+        "learn_long_material",
+        "tag_update_end"
+      ],
+      "prompt": "Read a long design document and command output, extract several durable architectural findings, use them in a repository change, and close the session.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "learn_long_material",
+        "tag_update_end"
+      ]
+    },
+    {
+      "allowed_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "add_durable_fact",
+        "link_related_concepts",
+        "tag_update_end",
+        "add_without_search",
+        "leave_fact_unlinked",
+        "skip_kindex"
+      ],
+      "control_must_underperform": true,
+      "covers": [
+        {
+          "heading_contains": "kindex",
+          "target_suffix": "/.codex/AGENTS.md"
+        }
+      ],
+      "description": "A new durable fact is deduplicated before capture and connected to related knowledge.",
+      "forbidden_actions": [
+        "add_without_search",
+        "leave_fact_unlinked",
+        "skip_kindex"
+      ],
+      "id": "durable_capture_deduplicate_and_link",
+      "ordered_actions": [
+        "source_profile",
+        "tag_start_or_resume",
+        "search_or_context",
+        "add_durable_fact",
+        "link_related_concepts",
+        "tag_update_end"
+      ],
+      "prompt": "During substantive work, identify a genuinely new durable project fact with an existing related concept. Persist it without creating a duplicate, then close the session.",
+      "required_actions": [
+        "tag_start_or_resume",
+        "source_profile",
+        "search_or_context",
+        "add_durable_fact",
+        "link_related_concepts",
+        "tag_update_end"
+      ]
+    }
+  ],
+  "owner": "Jeremy McEntire",
+  "schema_version": 2,
+  "suite_id": "codex-kindex-register-v2"
+}

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all, replace_matching
+from helpers import StubProvider, inspection, keep_all, qualify_plan, replace_matching
 
 import meditate.transaction as transaction
 from meditate.models import Authority, EvidenceEvent
@@ -45,6 +45,7 @@ def replacement_plan(config_factory: ConfigFactory):
         provider=provider,
         inspection=inspection(config, (correction(),)),
     )
+    qualify_plan(config, plan.run_id)
     return config, target, original, plan
 
 
@@ -182,6 +183,7 @@ def test_second_target_failure_rolls_back_first(
         provider=provider,
         inspection=inspection(config, (correction("Replace both old placeholder entries."),)),
     )
+    qualify_plan(config, plan.run_id)
     actual_replace = transaction._replace_target
 
     def fail_second(
@@ -286,6 +288,7 @@ def test_unattended_apply_is_rejected_even_with_reviewed_evidence_and_local_poli
     assert state["state"] == "planned"
     assert state["consumed"] is False
 
+    qualify_plan(config, plan.run_id)
     receipt = apply_run(
         config,
         plan.run_id,
@@ -321,5 +324,6 @@ def test_target_mode_is_preserved(config_factory: ConfigFactory) -> None:
         replace_matching({OBSOLETE_COMMIT_RULE: "- Commit completed work after tests."})
     )
     fresh = create_plan(config, provider=provider, inspection=inspection(config, (correction(),)))
+    qualify_plan(config, fresh.run_id)
     apply_run(config, fresh.run_id, mode="attended", approval_sha256=fresh.plan_sha256)
     assert os.stat(target).st_mode & 0o777 == 0o640

@@ -16,7 +16,7 @@ from typing import Any
 from .config import Config
 from .models import Authority, EvidenceEvent, SourceStats
 from .redact import sanitize_text, surviving_high_confidence
-from .util import display_path, sha256_text
+from .util import display_path, fail, sha256_text
 
 _ORIGIN_SESSION = re.compile(r"originSessionId:\s*[\"']?([0-9a-fA-F-]{20,})")
 
@@ -353,8 +353,11 @@ def _kindex(config: Config) -> tuple[list[EvidenceEvent], SourceStats, list[str]
             )
             found = json.loads(result.stdout)
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-            warnings.append(f"kindex_search_failed:{type(exc).__name__}")
-            continue
+            fail(
+                "kindex_required_failed",
+                "Configured Kindex is installed but a required search failed: "
+                f"{type(exc).__name__}",
+            )
         if isinstance(found, list):
             ids.update(
                 str(item["id"]) for item in found if isinstance(item, dict) and item.get("id")
@@ -371,8 +374,11 @@ def _kindex(config: Config) -> tuple[list[EvidenceEvent], SourceStats, list[str]
             )
             node = json.loads(result.stdout)
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-            warnings.append(f"kindex_show_failed:{type(exc).__name__}")
-            continue
+            fail(
+                "kindex_required_failed",
+                "Configured Kindex is installed but a required node read failed: "
+                f"{type(exc).__name__}",
+            )
         if not isinstance(node, dict) or node.get("status", "active") != "active":
             continue
         content = node.get("content") or node.get("title")

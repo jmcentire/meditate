@@ -2,6 +2,108 @@
 
 All notable changes to Meditate are documented here.
 
+## 0.2.0 - 2026-08-19
+
+Meditate v0.2.0 now treats a stable, defect-free directive set as its fixed point.
+The objective is defect resolution. Size is telemetry rather than an objective,
+and every changed plan must pass an independent consumer-agent qualification
+before apply.
+
+### Added
+
+- Local defect preflight with a confirmed `exact_duplicate` class and a
+  conservative same-heading/shared-subject `exception_lineage` review class.
+  A file with no candidates produces a successful zero-token `stable_noop` and
+  never resolves provider credentials: zero model calls.
+- Complete-set fixed-point planning: the provider receives every non-overlapping
+  candidate but only candidate directive IDs; unrelated directives are locally
+  kept. A changed post-image retaining a confirmed defect fails with
+  `non_idempotent_proposal`.
+- Typed directive compilation. Providers supply an RFC 2119 keyword, concrete
+  rule, behavioral rationale, scope, and optional boundary example; local code
+  validates and renders canonical Markdown instead of accepting replacement prose.
+- Planner-blind owner-authored sentinel suites and `meditate verify`; the planner
+  never receives the suite or its outcomes. Every case runs against control,
+  predecessor, and candidate bundles on Claude or Codex. The consumer sees only
+  neutral scenarios and opaque case references and returns a free-form ordered
+  plan; semantic case/action IDs, assertions, and bounded literal detectors remain
+  local. Suite, verifier prompt/schema/system prompts, plan, target, agent/version,
+  model, repeat, response, and outcome hashes are bound into immutable artifacts.
+  A pass is not universal behavioral equivalence; it proves only the recorded cases
+  and consumer.
+- Owner Kindex probe/counter-probe suites for Claude and Codex, including
+  substantive lifecycle, irritated-register, trivial-task, topic-switch,
+  long-material, and durable-deduplication boundaries.
+- Acceptance fixtures for unchanged input, corrected input, second-run byte
+  identity, ten-iteration stability, complete multi-defect convergence, partial-
+  resolution rejection, and checkability-anchor preservation.
+
+### Changed
+
+- Byte growth is permitted when otherwise valid and justified; reports label
+  byte counts as telemetry. The configured size floor, absolute growth headroom,
+  Claude line guidance, and Codex configured-target byte budget remain safety
+  constraints.
+- Reports lead with `stable_noop`, `reviewed_noop`, or qualification-required
+  defect outcomes and enumerate detected, resolved, and unresolved classes.
+- `run --apply` executes the configured owner suite before requesting unattended
+  apply. A passed suite does not bypass the unattended config, probation, or
+  low-blast-radius gates.
+- When Kindex is enabled and `kin` is installed, every configured search and node
+  read is required. Failure aborts before planning with `kindex_required_failed`
+  instead of silently dropping durable evidence.
+- Public runtime credentials are exclusively `ANTHROPIC_API_KEY` for planning and
+  `OPENAI_API_KEY` for clean-room Codex consumer verification; private
+  organization-specific key names do not appear in source, tests, documentation,
+  or release artifacts.
+- Live qualification rejected verifier v1 because model-visible semantic action
+  labels leaked the grading key to the cold control. Verifier schema/prompt v2
+  uses hidden local detectors, rejects detector vocabulary in visible scenarios,
+  and binds exact prompt provenance. The same qualification pass also made RFC
+  keywords exempt from the legacy intensifier check, admitted source-grounded
+  universal restatements, and canonicalized the archive root before any provider
+  call so macOS `/tmp` aliases cannot create an unverifiable run.
+- Prompt version 10, SHA-256
+  `d277c05dee519d697586dcf3a1cdf74c3a848ee2297e83985d7c96b66ff50d72`, and
+  parser version `meditate-parser-v25` invalidate prior plans rather than
+  reinterpreting them under the new objective and schema.
+- Candidate qualification now requires every case on every repeat, forbids any
+  per-case predecessor-to-candidate regression, and requires designated controls
+  to underperform the candidate. Predecessor misses remain visible as
+  `baseline_gap_cases`; candidate repairs remain visible as
+  `candidate_improvement_cases` instead of making a flaky predecessor an oracle.
+- Codex verification creates a private temporary `CODEX_HOME`, ignores ambient
+  user config/rules, and requires `OPENAI_API_KEY`; global `AGENTS.md`, memories,
+  and user configuration cannot leak into the cold control.
+
+### Live qualification receipts
+
+- Restored live Claude target SHA
+  `441fe6e9af0302329b753fa9138f6a5fc5c556637991bfec679700adea1acb76`
+  and Codex target SHA
+  `0dd415bb140f10fe95c70005e33ca523f1ed60419a79bbfeabdf9a31446c6b63`
+  produced zero-call, byte-identical `stable_noop` runs
+  `20260819T161206Z-d6dbad85` and `20260819T161218Z-834d615b`.
+- Disposable Claude plan `20260819T165955Z-1987f9ef` resolved one exact duplicate
+  (67 to 66 directives; 11,606 to 11,378 bytes). Claude Code 2.1.224 with
+  `claude-sonnet-4-6` scored pre 18/18, post 18/18, and control 0/18; receipt SHA
+  `4f1851d08ddb4047243f6978204bda6b29ad59d245dd744a020e31321eb878aa`
+  authorized attended disposable apply. Run `20260819T170602Z-39e3bba4` then
+  returned a zero-call byte-identical no-op.
+- Claude run `20260819T165129Z-70f323ea` scored pre 18/18 and post 17/18 after a
+  lower-position rewrite. It failed closed and was never applied.
+- Disposable Codex plan `20260819T171655Z-546b02cd` resolved one exact duplicate
+  (35 to 34 directives; 5,269 to 4,830 bytes). Codex CLI 0.147.0 with
+  `gpt-5.6-sol` in a fresh private `CODEX_HOME` scored post 18/18 and control 0/18;
+  one predecessor repeat gap was repaired and recorded as an improvement. Receipt
+  SHA `0376960893146c8f9f29559da0fee2a9f14a0b182eae3759689dda2b0e915b1d`
+  authorized attended disposable apply. Run `20260819T171954Z-d68b18c5` then
+  returned a zero-call byte-identical no-op.
+
+These receipts qualify only the six owner-authored Kindex cases on the recorded
+consumer versions and models. They do not establish universal behavioral
+equivalence or future-model performance.
+
 ## 0.1.0 - 2026-08-18
 
 First public alpha release, prepared for distribution as a versioned wheel on the

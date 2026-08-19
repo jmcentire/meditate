@@ -14,6 +14,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+from .candidates import CandidateCluster, candidate_summary, derive_candidate_clusters
 from .config import Config, resolve_codex_project_doc_max_bytes
 from .evidence import build_inspection
 from .imports import build_import_graph
@@ -23,6 +24,7 @@ from .models import (
     Directive,
     EvidenceEvent,
     InspectionResult,
+    RunUsage,
     SourceStats,
     TargetDocument,
     ValidatedPlan,
@@ -42,16 +44,22 @@ from .util import (
     sha256_bytes,
     sha256_text,
 )
+from .verification import VERIFICATION_METHOD
 
-PARSER_VERSION = "meditate-parser-v20"
-PLAN_PROMPT_VERSION = "6"
+PARSER_VERSION = "meditate-parser-v25"
+PLAN_PROMPT_VERSION = "10"
 TOKEN_ESTIMATOR = "utf8_bytes_upper_bound_v1"
 MAX_DECISION_DEPTH = 3
 MAX_DECISION_SUBJECT_CHARS = 400
 MAX_DECISION_LABEL_CHARS = 240
 MAX_DECISION_DETAIL_CHARS = 1_000
 MAX_CUSTOM_DECISION_CHARS = 2_000
+SEMANTIC_VERIFICATION_METHOD = VERIFICATION_METHOD
 SEMANTIC_VERIFICATION = {
+    "status": "required",
+    "method": SEMANTIC_VERIFICATION_METHOD,
+}
+LEGACY_SEMANTIC_VERIFICATION = {
     "status": "not_run",
     "method": "owner_defined_behavioral_suite",
 }
@@ -61,6 +69,7 @@ _INTENSIFIERS = re.compile(
 _OPERATIONAL_ACTIONS = re.compile(
     r"(?i)\b(?:archive|commit|delete|deploy|merge|publish|push|release|restore|rev|test|verify)\b"
 )
+_CHECKABLE_CODE_ANCHOR = re.compile(r"`([^`\r\n]{1,200})`")
 _EXPLICIT_REVERSAL = re.compile(r"(?i)\b(?:new rule|no longer|supersedes?|replace the rule)\b")
 _OBSOLETE_OPT_IN = re.compile(r"(?i)\bonly when asked\b")
 _SELF_ATTESTED_VERIFICATION = re.compile(r"(?i)\b(?:verified|verifying)\b")
@@ -70,6 +79,11 @@ _EXTERNAL_VERIFICATION_CRITERION = re.compile(
 _HIGH_IMPACT_ACTIONS = frozenset({"deploy", "merge", "publish", "push", "release"})
 _QUALITY_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _REPEATED_PHRASE_WORDS = 8
+_NORMATIVE_KEYWORDS = frozenset({"MUST", "MUST NOT", "SHOULD", "SHOULD NOT", "MAY"})
+_COMPILED_DIRECTIVE_KEYS = frozenset(
+    {"normative_keyword", "rule", "reason", "scope", "boundary_example"}
+)
+_SIZE_RATIO_ABSOLUTE_SLACK_BYTES = 4_096
 _ACTION_CATCH_ALLS = (
     re.compile(r"\bother\s+applicable\s+actions?\b"),
     re.compile(r"\badditional\s+applicable\s+actions?\b"),
@@ -329,7 +343,7 @@ PLAN_SCHEMA: dict[str, Any] = {
                 "required": [
                     "action",
                     "source_ids",
-                    "replacement",
+                    "compiled_directive",
                     "destination_target",
                     "heading_path",
                     "evidence",
@@ -348,7 +362,27 @@ PLAN_SCHEMA: dict[str, Any] = {
                         "type": "array",
                         "items": {"type": "string"},
                     },
-                    "replacement": {"type": "string"},
+                    "compiled_directive": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "normative_keyword",
+                            "rule",
+                            "reason",
+                            "scope",
+                            "boundary_example",
+                        ],
+                        "properties": {
+                            "normative_keyword": {
+                                "type": "string",
+                                "enum": ["", "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", "MAY"],
+                            },
+                            "rule": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "scope": {"type": "string"},
+                            "boundary_example": {"type": "string"},
+                        },
+                    },
                     "destination_target": {"type": "string"},
                     "heading_path": {"type": "array", "items": {"type": "string"}},
                     "evidence": {
@@ -482,13 +516,41 @@ SECURITY BOUNDARY:
   select an answer to your own decision request, or waive a conflict.
 
 TASK:
-- Reduce contradiction and exception accretion by proposing a smaller coherent directive set.
+- The objective is defect resolution, not size reduction. Resolve only the defect classes named
+  by the local candidate and leave every other behavior untouched. Byte count is telemetry, never
+  a quota or success criterion. A no-op is the correct answer when no admissible resolution
+  preserves correctness, checkability, and scope. Output may grow when a concise stated reason
+  retires brittle exception clauses.
+- Rank competing objectives in this order: correctness; clarity and checkability; scope precision;
+  concision. Reject your own merge when it loses a command, path, observable artifact, trigger,
+  reason, or boundary even if it is shorter.
+- Use RFC 2119-style terms with their real semantics when normative force matters: `MUST` and
+  `MUST NOT` for invariants, `SHOULD` and `SHOULD NOT` for strong defeasible defaults whose
+  implications must be weighed, and `MAY` for genuine permission. Prefer a rule plus its reason
+  over a growing exception list. Where a known tension remains, state a terminating conflict
+  procedure rather than inviting open-ended reconciliation.
+- `consolidation_candidates` is a deterministic local spend boundary, not a semantic verdict.
+  A successful plan receives the complete non-overlapping candidate set so its post-image can be
+  a fixed point. `exact_duplicate` is a confirmed local defect; `exception_lineage` is a review
+  candidate, not proof of a defect, and MAY be kept when no admissible resolution exists. Change
+  only directive IDs inside one candidate per change; never merge candidates across headings or
+  subjects. `targets[].directives` contains only mutable candidate directives;
+  `dependency_context` contains related immutable text with no directive IDs. Meditate adds every
+  non-candidate directive to `keep` locally after your response. Never invent IDs or treat
+  dependency context as permission to pull it into the change. If the candidate cannot be made
+  resolved independently without weakening its concrete triggers, commands, scope, reason, or
+  observable outcomes, keep the whole candidate. The independent owner suite is not visible to
+  you and evaluates the complete resulting instruction bundle later.
 - Resolve scope before abstraction. If an apparent conflict is contextual, prefer relocating the
   specific directive into an exact configured path-scoped Claude rule before merging it. Never
   average separate contexts into vague global prose, and never invent a path glob.
 - Preserve older evidence as lineage. Prefer newer evidence only after authority and scope.
-- Current instruction directives are authoritative baseline state. Do not change one
-  merely because a rewrite sounds cleaner. A change needs exact evidence citations and a reason.
+- Current instruction directives are authoritative baseline state. Do not change one merely
+  because a rewrite sounds cleaner or shorter. A change needs a named defect ground, exact
+  evidence under the narrow source-only exception below, and a reason explaining how the defect
+  is resolved. A removal must be grounded in a specific superseding directive ID, an explicitly
+  resolved contradiction, provably dead scope, or user confirmation. Reducing count is not a
+  ground.
 - Do not add urgency, absolutes, or permissions absent from the cited evidence and source
   directives. In particular, do not turn end-to-end follow-through into an ungated deployment.
 - Every newly introduced operational action, including commit, merge, push, release, and deploy,
@@ -560,8 +622,9 @@ TASK:
   validated result candidate-only and does not write the hook or settings.
 
 OUTPUT CONTRACT:
-- Every existing directive ID appears exactly once: either in `keep`, or in one
-  change's `source_ids`.
+- Every mutable candidate directive ID appears exactly once: either in `keep`, or in one change's
+  `source_ids`. Meditate adds every non-candidate pre-image directive to `keep` locally, completing
+  total disposition without exposing immutable IDs to you.
 - `keep` means Meditate copies the original bytes. Never return text for kept directives.
 - The five total dispositions are `keep`, `replace`, `remove`, `relocate`, and `escalate`.
   `replace` may consolidate several source IDs into one replacement. `remove` needs especially
@@ -573,12 +636,26 @@ OUTPUT CONTRACT:
   another exact configured value from `allowed_targets`.
 - For non-escalate changes, leave enforcement_target and deterministic_check empty. For
   non-relocations, leave relocation_basis empty.
-- Keep each replacement concise. Never repeat a normalized contiguous phrase of eight or more
-  words within one replacement.
+- For every semantic `replace`, return a `compiled_directive` with exactly five fields:
+  `normative_keyword`, `rule`, `reason`, `scope`, and `boundary_example`. Use one of `MUST`,
+  `MUST NOT`, `SHOULD`, `SHOULD NOT`, or `MAY` with its RFC 2119 meaning. Put the behavioral
+  requirement in `rule`, the reason that generates legitimate exceptions in `reason`, and the
+  applicability boundary in `scope`. Use `boundary_example` only when one concrete applies/does-
+  not-apply example materially pins the boundary; otherwise return an empty string. Meditate,
+  not you, renders these fields into canonical Markdown. For byte-exact single-directive
+  relocation and for `remove` or `escalate`, return all five fields as empty strings.
+- Keep each compiled directive no longer than correctness, checkability, scope, and its reason
+  require.
+  Never repeat a normalized contiguous phrase of eight or more words within one replacement.
 - Do not introduce open-ended action catch-alls such as "other applicable actions",
   "additional applicable actions", "and similar", "etc", or "and so on" unless that exact
   catch-all already appears in a source directive or an exact cited evidence quote.
 - Copy evidence quotes exactly from the sanitized event text. Do not paraphrase quotes.
+- For a `replace` that consolidates two or more directives inside one local candidate,
+  the source directives are sufficient proposal evidence and `evidence` may be empty. This narrow
+  source-only allowance does not apply to single-directive rewrites, remove, relocate, escalate,
+  or a decision request. Preserve every source trigger, command, scope boundary, exception, and
+  observable outcome; an independent owner suite, not your own claim, decides whether it survived.
 - Set minimum_apply_mode to attended for every change. Structural validation and evidence
   allowlisting do not establish behavioral equivalence.
 - Protected directives must be kept.
@@ -600,6 +677,7 @@ def inspect_state(config: Config) -> InspectionResult:
 
 
 def inspection_dict(result: InspectionResult, config: Config) -> dict[str, Any]:
+    candidates = derive_candidate_clusters(result)
     return {
         "schema_version": SCHEMA_VERSION,
         "config_sha256": config.hash,
@@ -620,6 +698,8 @@ def inspection_dict(result: InspectionResult, config: Config) -> dict[str, Any]:
         "events_selected": len(result.selected_events),
         "redactions": sum(len(event.redactions) for event in result.events),
         "overlap_candidates": list(result.overlaps),
+        "consolidation_preflight": candidate_summary(candidates),
+        "consolidation_candidates": [item.to_dict() for item in candidates],
         "warnings": list(result.warnings),
         "degraded": list(result.degraded),
         "token_estimator": TOKEN_ESTIMATOR,
@@ -706,12 +786,88 @@ def _event_rank(event: Any) -> tuple[int, int, int, int, str]:
     )
 
 
+def _candidate_scoped_targets(
+    target_data: list[dict[str, Any]],
+    candidate_clusters: tuple[CandidateCluster, ...],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Hide immutable directive IDs while retaining bounded dependency text."""
+
+    candidate_ids = {
+        source_id for cluster in candidate_clusters for source_id in cluster.source_ids
+    }
+    candidate_roots = [
+        (
+            cluster.target,
+            cluster.heading_path[:-1] if len(cluster.heading_path) > 1 else cluster.heading_path,
+        )
+        for cluster in candidate_clusters
+    ]
+    scoped_targets: list[dict[str, Any]] = []
+    dependency_context: list[dict[str, Any]] = []
+    total_directives = 0
+    for target in target_data:
+        scoped = dict(target)
+        mutable: list[dict[str, Any]] = []
+        for directive in target.get("directives", []):
+            if not isinstance(directive, dict):
+                continue
+            total_directives += 1
+            directive_id = directive.get("id")
+            if isinstance(directive_id, str) and directive_id in candidate_ids:
+                mutable.append(directive)
+                continue
+            heading = directive.get("heading_path")
+            logical_target = directive.get("target")
+            if not (
+                isinstance(heading, list)
+                and all(isinstance(item, str) for item in heading)
+                and isinstance(logical_target, str)
+            ):
+                continue
+            heading_tuple = tuple(heading)
+            if any(
+                logical_target == root_target and heading_tuple[: len(root_heading)] == root_heading
+                for root_target, root_heading in candidate_roots
+            ):
+                dependency_context.append(
+                    {
+                        "target": logical_target,
+                        "heading_path": heading,
+                        "text": directive.get("text", ""),
+                        "mutable": False,
+                    }
+                )
+        scoped["directives"] = mutable
+        scoped_targets.append(scoped)
+    preflight = candidate_summary(candidate_clusters)
+    preflight.update(
+        {
+            "submitted_directives": len(candidate_ids),
+            "automatic_keep_directives": total_directives - len(candidate_ids),
+            "dependency_context_directives": len(dependency_context),
+        }
+    )
+    return scoped_targets, dependency_context, preflight
+
+
 def _packet(
-    inspection: InspectionResult, config: Config
+    inspection: InspectionResult,
+    config: Config,
+    *,
+    restrict_to_candidates: bool = False,
 ) -> tuple[dict[str, Any], bytes, dict[str, Any], int, tuple[str, ...]]:
     selected = list(inspection.selected_events)
-    target_data = _sanitized_directives(inspection.targets, config)
+    full_target_data = _sanitized_directives(inspection.targets, config)
     imported_data = _sanitized_imports(inspection)
+    candidate_clusters = derive_candidate_clusters(inspection)
+    if restrict_to_candidates:
+        target_data, dependency_context, preflight = _candidate_scoped_targets(
+            full_target_data, candidate_clusters
+        )
+    else:
+        target_data = full_target_data
+        dependency_context = []
+        preflight = candidate_summary(candidate_clusters)
     dropped: list[str] = []
     while True:
         selected_sorted = sorted(selected, key=lambda item: (item.timestamp, item.id))
@@ -738,6 +894,9 @@ def _packet(
             },
             "allowed_targets": [target.logical_path for target in inspection.targets],
             "targets": target_data,
+            "consolidation_preflight": preflight,
+            "consolidation_candidates": [item.to_dict() for item in candidate_clusters],
+            "dependency_context": dependency_context,
             "import_graph": inspection.import_graph.public_dict(),
             "imported_documents": imported_data,
             "operator_decisions": [],
@@ -785,6 +944,80 @@ def _parse_output(text: str) -> dict[str, Any]:
     return value
 
 
+class _LocalNoCandidateProvider:
+    """Create a receipted no-op plan without resolving credentials or spending tokens."""
+
+    name = "local-preflight"
+
+    def __init__(self, model: str) -> None:
+        self.model = model
+
+    def complete(
+        self, *, system: str, payload: str, schema: dict[str, Any]
+    ) -> tuple[str, RunUsage]:
+        del system, schema
+        packet = json.loads(payload)
+        keep = [
+            directive["id"]
+            for target in packet.get("targets", [])
+            if isinstance(target, dict)
+            for directive in target.get("directives", [])
+            if isinstance(directive, dict) and isinstance(directive.get("id"), str)
+        ]
+        raw = {
+            "schema_version": SCHEMA_VERSION,
+            "keep": keep,
+            "changes": [],
+            "decision_request": None,
+            "unresolved_conflicts": [],
+        }
+        return json.dumps(raw), RunUsage(
+            calls=0,
+            actual_input_tokens=0,
+            actual_output_tokens=0,
+            stop_reason="local_no_consolidation_candidates",
+            model_id="not-invoked",
+        )
+
+
+def _candidate_source_sets(
+    raw_candidates: Any, directives: dict[str, Directive]
+) -> tuple[set[frozenset[str]], set[str]]:
+    if not isinstance(raw_candidates, list):
+        fail("invalid_candidate_boundary", "Candidate boundary must be an array")
+    boundaries: set[frozenset[str]] = set()
+    union: set[str] = set()
+    for index, candidate in enumerate(raw_candidates):
+        if not isinstance(candidate, dict):
+            fail("invalid_candidate_boundary", f"Candidate {index} must be an object")
+        source_ids = candidate.get("source_ids")
+        target = candidate.get("target")
+        heading_path = candidate.get("heading_path")
+        if (
+            not isinstance(source_ids, list)
+            or not source_ids
+            or not all(isinstance(item, str) and item in directives for item in source_ids)
+            or len(set(source_ids)) != len(source_ids)
+            or not isinstance(target, str)
+            or not isinstance(heading_path, list)
+            or not all(isinstance(item, str) for item in heading_path)
+        ):
+            fail("invalid_candidate_boundary", f"Candidate {index} is malformed")
+        if any(item in union for item in source_ids):
+            fail("invalid_candidate_boundary", "Candidate source sets overlap")
+        if any(
+            directives[item].target != target
+            or list(directives[item].heading_path) != heading_path
+            or directives[item].protected
+            for item in source_ids
+        ):
+            fail("invalid_candidate_boundary", f"Candidate {index} disagrees with source state")
+        frozen = frozenset(source_ids)
+        boundaries.add(frozen)
+        union.update(source_ids)
+    return boundaries, union
+
+
 def _repeated_normalized_phrase(text: str) -> str | None:
     """Return the first repeated normalized eight-word window, if any."""
 
@@ -820,6 +1053,80 @@ def _normalize_replacement(text: str, source: Directive | None) -> str:
     if source and source.raw.endswith(("\n", "\r")):
         chosen += newline
     return chosen
+
+
+def _sentence(value: str) -> str:
+    chosen = value.strip()
+    return chosen if chosen.endswith((".", "!", "?", ":", ";")) else chosen + "."
+
+
+def _compiled_replacement(
+    value: Any,
+    *,
+    action: str,
+    index: int,
+) -> tuple[dict[str, str], str]:
+    """Validate a typed directive record and render canonical Markdown locally."""
+
+    if not isinstance(value, dict) or set(value) != _COMPILED_DIRECTIVE_KEYS:
+        fail(
+            "invalid_compiled_directive",
+            f"Change {index} compiled_directive must have the five canonical fields",
+        )
+    normalized: dict[str, str] = {}
+    for field in sorted(_COMPILED_DIRECTIVE_KEYS):
+        raw = value.get(field)
+        if (
+            not isinstance(raw, str)
+            or "\x00" in raw
+            or "\r" in raw
+            or "\n" in raw
+            or len(raw) > 2_000
+        ):
+            fail(
+                "invalid_compiled_directive",
+                f"Change {index} compiled_directive.{field} is invalid",
+            )
+        normalized[field] = raw.strip()
+
+    populated = any(normalized.values())
+    if action in {"remove", "escalate"} or (action == "relocate" and not populated):
+        if populated:
+            fail(
+                "invalid_compiled_directive",
+                f"Change {index} must leave compiled_directive empty for {action}",
+            )
+        return normalized, ""
+
+    keyword = normalized["normative_keyword"]
+    if keyword not in _NORMATIVE_KEYWORDS:
+        fail(
+            "invalid_normative_keyword",
+            f"Change {index} needs an RFC 2119 normative keyword",
+        )
+    for field in ("rule", "reason", "scope"):
+        if not normalized[field]:
+            fail(
+                "invalid_compiled_directive",
+                f"Change {index} compiled_directive.{field} must not be empty",
+            )
+    rule = normalized["rule"]
+    if rule.startswith(("#", "-", "+", "*")) or any(
+        rule == candidate or rule.startswith(candidate + " ") for candidate in _NORMATIVE_KEYWORDS
+    ):
+        fail(
+            "invalid_compiled_directive",
+            f"Change {index} rule must omit Markdown markers and the normative keyword",
+        )
+
+    lines = [
+        f"- {keyword} {_sentence(rule)}",
+        f"  - Reason: {_sentence(normalized['reason'])}",
+        f"  - Scope: {_sentence(normalized['scope'])}",
+    ]
+    if normalized["boundary_example"]:
+        lines.append(f"  - Boundary example: {_sentence(normalized['boundary_example'])}")
+    return normalized, "\n".join(lines)
 
 
 def _append_under_heading(content: str, heading_path: list[str], replacement: str) -> str:
@@ -1159,6 +1466,8 @@ def _validate_and_render(
     submitted_event_ids: set[str],
     *,
     prior_conflict_fingerprints: set[str] | None = None,
+    candidate_clusters: Any = None,
+    enforce_candidate_boundary: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str], ApplyMode, tuple[str, ...], int, int]:
     expected_fields = set(PLAN_SCHEMA["properties"])
     if set(raw) != expected_fields:
@@ -1188,6 +1497,10 @@ def _validate_and_render(
         event.id: event for event in inspection.selected_events if event.id in submitted_event_ids
     }
     all_ids = set(directives)
+    candidate_boundaries: set[frozenset[str]] = set()
+    candidate_ids: set[str] = set()
+    if enforce_candidate_boundary:
+        candidate_boundaries, candidate_ids = _candidate_source_sets(candidate_clusters, directives)
     seen: set[str] = set()
     normalized_changes: list[dict[str, Any]] = []
     changed_ids: set[str] = set()
@@ -1204,6 +1517,9 @@ def _validate_and_render(
         seen.add(directive_id)
 
     for index, change in enumerate(changes):
+        expected_change_fields = set(PLAN_SCHEMA["properties"]["changes"]["items"]["properties"])
+        if set(change) != expected_change_fields:
+            fail("plan_schema", f"Change {index} has invalid fields")
         action = change.get("action")
         source_ids = change.get("source_ids")
         if action not in {"replace", "remove", "relocate", "escalate"}:
@@ -1214,6 +1530,23 @@ def _validate_and_render(
             or not all(isinstance(item, str) for item in source_ids)
         ):
             fail("invalid_source_ids", f"Change {index} needs source_ids")
+        if enforce_candidate_boundary and not any(
+            frozenset(source_ids).issubset(boundary) for boundary in candidate_boundaries
+        ):
+            fail(
+                "outside_consolidation_candidate",
+                f"Change {index} is outside the locally qualified candidate boundary",
+            )
+        defect_classes = sorted(
+            {
+                reason
+                for cluster in candidate_clusters or ()
+                if isinstance(cluster, dict)
+                and set(source_ids).issubset(set(cluster.get("source_ids", [])))
+                for reason in cluster.get("reason_codes", [])
+                if isinstance(reason, str)
+            }
+        )
         for directive_id in source_ids:
             if directive_id not in directives:
                 fail("unknown_directive", f"Unknown source directive: {directive_id}")
@@ -1273,9 +1606,9 @@ def _validate_and_render(
                 "invalid_heading_path",
                 f"Change {index} must use relocate to change heading path",
             )
-        replacement = change.get("replacement")
-        if not isinstance(replacement, str):
-            fail("invalid_replacement", f"Change {index} replacement must be text")
+        compiled_directive, replacement = _compiled_replacement(
+            change.get("compiled_directive"), action=action, index=index
+        )
         if (
             action in {"replace", "relocate"}
             and replacement.strip()
@@ -1357,7 +1690,13 @@ def _validate_and_render(
             )
 
         citations = change.get("evidence")
-        if not isinstance(citations, list) or not citations:
+        source_only_consolidation = (
+            enforce_candidate_boundary
+            and action == "replace"
+            and len(source_ids) >= 2
+            and citations == []
+        )
+        if not isinstance(citations, list) or (not citations and not source_only_consolidation):
             fail("missing_evidence", f"Change {index} needs evidence")
         normalized_citations: list[dict[str, str]] = []
         for citation in citations:
@@ -1396,6 +1735,15 @@ def _validate_and_render(
             else "\n".join(citation["quote"] for citation in normalized_citations)
         )
         semantic_replacement = source_support if action == "escalate" else replacement
+        if source_only_consolidation:
+            source_anchors = set(_CHECKABLE_CODE_ANCHOR.findall(source_support))
+            replacement_anchors = set(_CHECKABLE_CODE_ANCHOR.findall(replacement))
+            missing_anchors = sorted(source_anchors - replacement_anchors)
+            if missing_anchors:
+                fail(
+                    "checkability_regression",
+                    f"Change {index} drops concrete source anchors: " + ", ".join(missing_anchors),
+                )
         if action in {"replace", "relocate"} and _requires_all_ci_before_commit(
             semantic_replacement
         ):
@@ -1415,10 +1763,27 @@ def _validate_and_render(
         supported_intensifiers = {
             item.casefold() for item in _INTENSIFIERS.findall(source_support + evidence_support)
         }
+        intensifier_text = semantic_replacement
+        if action in {"replace", "relocate"} and compiled_directive["normative_keyword"]:
+            # The normative keyword is a locally validated RFC 2119 field, not a
+            # model-authored intensifier. Continue screening the rule, reason,
+            # scope, and boundary text so the record cannot smuggle in a second
+            # unsupported absolute.
+            intensifier_text = "\n".join(
+                compiled_directive[field]
+                for field in ("rule", "reason", "scope", "boundary_example")
+            )
         replacement_intensifiers = {
-            item.casefold() for item in _INTENSIFIERS.findall(semantic_replacement)
+            item.casefold() for item in _INTENSIFIERS.findall(intensifier_text)
         }
         unsupported = replacement_intensifiers - supported_intensifiers
+        universal_scope_terms = {"always", "every", "unconditionally"}
+        if supported_intensifiers & universal_scope_terms:
+            # These are alternate lexical encodings of the same universal
+            # scope. Typed compilation frequently moves "always" from source
+            # prose into an "every ..." scope field; that is not an authority
+            # escalation.
+            unsupported -= universal_scope_terms
         if unsupported:
             fail(
                 "unsupported_intensifier",
@@ -1520,6 +1885,7 @@ def _validate_and_render(
                 "action": action,
                 "source_ids": source_ids,
                 "replacement": replacement,
+                "compiled_directive": compiled_directive,
                 "destination_target": destination,
                 "heading_path": heading_path,
                 "evidence": normalized_citations,
@@ -1530,7 +1896,9 @@ def _validate_and_render(
                 "deterministic_check": deterministic_check.strip(),
                 "relocation_basis": relocation_basis,
                 "candidate_only": action == "escalate",
+                "source_only_consolidation": source_only_consolidation,
                 "lineage_depth": lineage_depth,
+                "defect_classes": defect_classes,
             }
         )
 
@@ -1576,6 +1944,13 @@ def _validate_and_render(
         prior_conflict_fingerprints=prior_conflict_fingerprints or set(),
     )
     if normalized_decision_request is not None:
+        if enforce_candidate_boundary and not set(
+            normalized_decision_request["directive_ids"]
+        ).issubset(candidate_ids):
+            fail(
+                "outside_consolidation_candidate",
+                "Decision request is outside the locally qualified candidate boundary",
+            )
         overall_mode = "attended"
 
     replacements: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
@@ -1596,6 +1971,7 @@ def _validate_and_render(
             appends[destination].append((change["heading_path"], text))
 
     proposed: dict[str, str] = {}
+    post_targets: list[TargetDocument] = []
     post_count = 0
     pre_count = len(directives)
     for logical_path, target in targets_by_logical.items():
@@ -1610,7 +1986,12 @@ def _validate_and_render(
         proposed_size = len(content.encode("utf-8"))
         if original_size:
             ratio = proposed_size / original_size
-            if ratio < config.safety.size_floor_ratio or ratio > config.safety.size_ceiling_ratio:
+            below_floor = proposed_size < original_size * config.safety.size_floor_ratio
+            above_ceiling = proposed_size > max(
+                original_size * config.safety.size_ceiling_ratio,
+                original_size + _SIZE_RATIO_ABSOLUTE_SLACK_BYTES,
+            )
+            if below_floor or above_ceiling:
                 fail(
                     "size_ratio",
                     f"Plan size ratio {ratio:.3f} for {logical_path} is outside configured bounds",
@@ -1627,9 +2008,40 @@ def _validate_and_render(
         )
         post_count += len(post_directives)
         proposed[logical_path] = content
+        post_bytes = content.encode("utf-8")
+        post_targets.append(
+            TargetDocument(
+                path=target.path,
+                logical_path=target.logical_path,
+                content=content,
+                content_bytes=post_bytes,
+                sha256=sha256_bytes(post_bytes),
+                mode=target.mode,
+                existed=target.existed,
+                directives=post_directives,
+                scope_paths=target.scope_paths,
+            )
+        )
     if post_count > pre_count:
         fail(
             "directive_count_growth", f"Directive count would grow from {pre_count} to {post_count}"
+        )
+    post_candidates = derive_candidate_clusters(
+        InspectionResult(
+            targets=tuple(post_targets),
+            events=(),
+            selected_events=(),
+            stats=SourceStats(),
+            import_graph=inspection.import_graph,
+        )
+    )
+    post_preflight = candidate_summary(post_candidates)
+    remaining_confirmed = post_preflight.get("confirmed_defect_classes", [])
+    if changed_ids and remaining_confirmed:
+        fail(
+            "non_idempotent_proposal",
+            "Proposal leaves confirmed locally detectable defects for a later invocation: "
+            + ", ".join(remaining_confirmed),
         )
     churn = len(changed_ids) / max(1, pre_count)
     if churn > config.safety.max_churn_ratio:
@@ -1643,6 +2055,7 @@ def _validate_and_render(
         "changes": normalized_changes,
         "unresolved_conflicts": normalized_conflicts,
         "decision_request": normalized_decision_request,
+        "post_consolidation_preflight": post_preflight,
     }
     blocked = (
         tuple(["decision_required"] if normalized_decision_request else [])
@@ -1659,8 +2072,23 @@ def _validate_and_render(
     )
 
 
+def _validate_run_root_path(config: Config) -> Path:
+    """Validate the prospective run root without creating archive state."""
+
+    root = config.data_root / "runs"
+    if root.is_symlink() or root.resolve() != root.absolute():
+        fail("unsafe_run_path", f"Run archive root is unsafe: {root}")
+    return root
+
+
+def _validated_run_root(config: Config) -> Path:
+    """Return the canonical private run root accepted by archive readers."""
+
+    return ensure_private_dir(_validate_run_root_path(config))
+
+
 def _run_directory(config: Config, run_id: str) -> tuple[Path, Path, Path]:
-    root = ensure_private_dir(config.data_root / "runs")
+    root = _validated_run_root(config)
     final = root / run_id
     if final.exists():
         fail("run_exists", f"Run already exists: {run_id}")
@@ -1778,8 +2206,10 @@ def _plan_metrics(
     return per_target, totals
 
 
-def _local_plan_summary(operations: dict[str, Any], metrics: dict[str, Any]) -> str:
-    """Summarize only locally validated dispositions, conflicts, and metrics."""
+def _local_plan_summary(
+    operations: dict[str, Any], metrics: dict[str, Any], preflight: dict[str, Any]
+) -> str:
+    """Summarize locally validated defect outcomes, dispositions, and telemetry."""
 
     action_counts = {action: 0 for action in ("replace", "remove", "relocate", "escalate")}
     for change in operations.get("changes", []):
@@ -1795,25 +2225,22 @@ def _local_plan_summary(operations: dict[str, Any], metrics: dict[str, Any]) -> 
     pre_bytes = int(metrics["pre_bytes"])
     post_bytes = int(metrics["post_bytes"])
     byte_delta = int(metrics["byte_delta"])
+    detected = ", ".join(str(item) for item in preflight.get("defect_classes", [])) or "none"
+    resolved = ", ".join(str(item) for item in preflight.get("defects_resolved", [])) or "none"
+    unresolved = ", ".join(str(item) for item in preflight.get("defects_unresolved", [])) or "none"
     return (
+        f"Outcome: {preflight.get('outcome', 'unknown')}. "
+        f"Defect classes detected: {detected}; resolved: {resolved}; unresolved: {unresolved}. "
         f"Validated {pre_directives} pre directives into {post_directives} post directives "
         f"({directive_delta:+d}). Dispositions: {keep_count} keep, "
         f"{action_counts['replace']} replace, {action_counts['remove']} remove, "
         f"{action_counts['relocate']} relocate, {action_counts['escalate']} escalate. "
         f"Changed directives: {changed_directives}. "
         f"Escalated directives: {escalated_directives}. "
-        f"Aggregate bytes: {pre_bytes} pre to {post_bytes} post ({byte_delta:+d}). "
+        f"Byte telemetry: {pre_bytes} pre to {post_bytes} post ({byte_delta:+d}); "
+        "byte delta is not an objective. "
         f"Unresolved conflicts: {conflict_count}."
     )
-
-
-def _metric_blocked_reasons(blocked: tuple[str, ...], metrics: dict[str, Any]) -> tuple[str, ...]:
-    if (
-        int(metrics["post_bytes"]) > int(metrics["pre_bytes"])
-        and "compression_regression" not in blocked
-    ):
-        return (*blocked, "compression_regression")
-    return blocked
 
 
 def _publish_run(root: Path, staging: Path, final: Path) -> None:
@@ -1908,6 +2335,11 @@ def create_plan(
     dropped_evidence_ids: tuple[str, ...] = (),
     expected_model_id: str = "",
 ) -> ValidatedPlan:
+    # Validate the eventual archive boundary before collecting evidence or
+    # spending a provider call. Every successful plan must be reloadable by the
+    # verifier/apply path under the same canonical-path rule.
+    _validate_run_root_path(config)
+    enforce_candidate_boundary = provider is None
     result = inspection or inspect_state(config)
     lineage = decision_lineage or {
         "depth": 0,
@@ -1937,7 +2369,9 @@ def create_plan(
             or expected_model_id
         ):
             fail("invalid_decision_request", "A successor plan requires a frozen parent packet")
-        packet, packet_bytes, plan_schema, estimate, dropped = _packet(result, config)
+        packet, packet_bytes, plan_schema, estimate, dropped = _packet(
+            result, config, restrict_to_candidates=enforce_candidate_boundary
+        )
     else:
         if (
             operator_decision is None
@@ -1967,7 +2401,26 @@ def create_plan(
         dropped = dropped_evidence_ids
     run_id = new_run_id()
 
-    chosen_provider = provider or create_provider(config)
+    raw_candidates = packet.get("consolidation_candidates", [])
+    # A v22 production parent can publish a decision request only when it has
+    # a non-empty candidate boundary. Empty boundaries are therefore possible
+    # here only for explicitly injected/test providers. Preserve deterministic
+    # candidate enforcement for real successors without making those injected
+    # decision-chain fixtures impossible to replay.
+    enforce_current_candidate_boundary = enforce_candidate_boundary and (
+        frozen_packet is None or bool(raw_candidates)
+    )
+    local_noop = (
+        enforce_candidate_boundary
+        and frozen_packet is None
+        and isinstance(raw_candidates, list)
+        and not raw_candidates
+    )
+    chosen_provider = (
+        _LocalNoCandidateProvider(config.llm.model)
+        if local_noop
+        else provider or create_provider(config)
+    )
     import_graph_before = result.import_graph.public_dict()
     if build_import_graph(config).public_dict() != import_graph_before:
         fail("import_graph_drift", "Claude import graph changed before the provider call")
@@ -1976,7 +2429,7 @@ def create_plan(
         payload=packet_bytes.decode("utf-8"),
         schema=plan_schema,
     )
-    usage.estimated_input_tokens = estimate
+    usage.estimated_input_tokens = 0 if local_noop else estimate
     if usage.calls > config.llm.max_calls:
         fail("call_budget_exceeded", "Provider exceeded max_calls")
     if usage.actual_input_tokens > config.llm.max_total_input_tokens:
@@ -2005,6 +2458,27 @@ def create_plan(
             "Configured target bytes changed during plan generation; generate a new plan",
         )
     parsed = _parse_output(raw_text)
+    if enforce_current_candidate_boundary:
+        directives_by_id = {
+            directive.id: directive for target in result.targets for directive in target.directives
+        }
+        _candidate_boundaries, locally_mutable_ids = _candidate_source_sets(
+            raw_candidates, directives_by_id
+        )
+        model_keep = parsed.get("keep")
+        if isinstance(model_keep, list) and all(isinstance(item, str) for item in model_keep):
+            outside_keep = sorted(set(model_keep) - locally_mutable_ids)
+            if outside_keep:
+                fail(
+                    "outside_consolidation_candidate",
+                    "Model attempted to disposition immutable directive IDs: "
+                    + ", ".join(outside_keep),
+                )
+            parsed = deepcopy(parsed)
+            parsed["keep"] = [
+                *model_keep,
+                *sorted(set(directives_by_id) - locally_mutable_ids),
+            ]
     submitted_event_ids = {
         str(event["id"])
         for event in packet["evidence_events_oldest_to_newest"]
@@ -2023,6 +2497,8 @@ def create_plan(
         config,
         submitted_event_ids,
         prior_conflict_fingerprints=set(conflict_fingerprints),
+        candidate_clusters=raw_candidates,
+        enforce_candidate_boundary=enforce_current_candidate_boundary,
     )
     if normalized.get("decision_request") is not None and lineage_depth >= MAX_DECISION_DEPTH:
         fail(
@@ -2058,10 +2534,72 @@ def create_plan(
         )
     }
     summary_metrics["directives"] = aggregate_metrics["pre_directives"]
-    blocked = _metric_blocked_reasons(blocked, aggregate_metrics)
-    normalized["summary"] = _local_plan_summary(normalized, aggregate_metrics)
+    unattended_shape = (
+        enforce_current_candidate_boundary
+        and changed_count > 0
+        and not blocked
+        and normalized.get("decision_request") is None
+        and not normalized.get("unresolved_conflicts")
+        and operator_decision is None
+        and len(normalized.get("changes", [])) <= 2
+        and all(change.get("action") == "replace" for change in normalized.get("changes", []))
+        and changed_count / max(1, int(aggregate_metrics["pre_directives"])) <= 0.25
+    )
+    if unattended_shape:
+        minimum_mode = "unattended"
+        for change in normalized["changes"]:
+            change["minimum_apply_mode"] = "unattended"
     prompt_sha256 = sha256_text(SYSTEM_PROMPT)
-    semantic_verification = dict(SEMANTIC_VERIFICATION)
+    semantic_verification = (
+        dict(SEMANTIC_VERIFICATION)
+        if changed_count
+        else {"status": "not_applicable", "method": SEMANTIC_VERIFICATION_METHOD}
+    )
+    preflight = deepcopy(packet.get("consolidation_preflight", {}))
+    if not isinstance(preflight, dict):
+        fail("invalid_candidate_boundary", "Consolidation preflight is malformed")
+    preflight.update(
+        {
+            "provider_called": usage.calls > 0,
+            "estimated_input_tokens_avoided": estimate if local_noop else 0,
+        }
+    )
+    detected_defects = list(preflight.get("defect_classes", []))
+    post_preflight = normalized.get("post_consolidation_preflight", {})
+    if not isinstance(post_preflight, dict):
+        fail("invalid_candidate_boundary", "Post-consolidation preflight is malformed")
+    remaining_defects = list(post_preflight.get("defect_classes", []))
+    resolved_defects = sorted(set(detected_defects) - set(remaining_defects))
+    unresolved_defects = sorted(set(detected_defects) & set(remaining_defects))
+    proposed_resolution = bool(normalized.get("changes"))
+    if not detected_defects:
+        preflight.update(
+            {
+                "status": "no_detectable_defects",
+                "defects_resolved": [],
+                "defects_unresolved": [],
+                "outcome": "stable_noop",
+            }
+        )
+    elif proposed_resolution:
+        preflight.update(
+            {
+                "status": "defect_resolution_proposed",
+                "defects_resolved": resolved_defects,
+                "defects_unresolved": unresolved_defects,
+                "outcome": "candidate_requires_behavioral_qualification",
+            }
+        )
+    else:
+        preflight.update(
+            {
+                "status": "defects_detected_unresolved",
+                "defects_resolved": [],
+                "defects_unresolved": detected_defects,
+                "outcome": "reviewed_noop",
+            }
+        )
+    normalized["summary"] = _local_plan_summary(normalized, aggregate_metrics, preflight)
     normalized_decision_request = normalized.get("decision_request")
     artifact_operations = {
         key: value for key, value in normalized.items() if key != "decision_request"
@@ -2119,6 +2657,7 @@ def create_plan(
             "prompt_version": PLAN_PROMPT_VERSION,
             "prompt_sha256": prompt_sha256,
             "semantic_verification": semantic_verification,
+            "consolidation_preflight": preflight,
             "decision_request": normalized_decision_request,
             "operator_decision": operator_decision,
             "parent_plan_sha256": parent_plan_sha256,
@@ -2155,6 +2694,7 @@ def create_plan(
             "prompt_version": PLAN_PROMPT_VERSION,
             "prompt_sha256": prompt_sha256,
             "semantic_verification": semantic_verification,
+            "consolidation_preflight": preflight,
             "decision_request": normalized_decision_request,
             "operator_decision": operator_decision,
             "parent_plan_sha256": parent_plan_sha256,
@@ -2204,6 +2744,7 @@ def create_plan(
         prompt_version=PLAN_PROMPT_VERSION,
         prompt_sha256=prompt_sha256,
         semantic_verification=semantic_verification,
+        consolidation_preflight=preflight,
         post_directive_count=int(aggregate_metrics["post_directives"]),
         escalated_directive_count=escalated_count,
         metrics=aggregate_metrics,

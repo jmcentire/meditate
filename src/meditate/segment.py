@@ -93,8 +93,15 @@ def normalize_directive(text: str) -> str:
     return re.sub(r"\s+", " ", "\n".join(lines).strip()).casefold()
 
 
-def _directive_id(logical_path: str, headings: tuple[str, ...], normalized: str) -> str:
-    material = "\x00".join((str(SCHEMA_VERSION), logical_path, "/".join(headings), normalized))
+def _directive_id(
+    logical_path: str,
+    headings: tuple[str, ...],
+    normalized: str,
+    occurrence: int,
+) -> str:
+    material = "\x00".join(
+        (str(SCHEMA_VERSION), logical_path, "/".join(headings), normalized, str(occurrence))
+    )
     return f"dir_{sha256_text(material)[:16]}"
 
 
@@ -111,9 +118,10 @@ def segment_markdown(
         offsets.append(cursor)
         cursor += len(line)
 
-    headings: list[str] = []
+    heading_stack: list[tuple[int, str]] = []
     protected_names = {item.casefold() for item in protected_headings}
     blocks: list[Directive] = []
+    occurrences: dict[tuple[tuple[str, ...], str], int] = {}
     index = 0
     if lines and lines[0].strip() == "---":
         frontmatter_end = next(
@@ -134,11 +142,14 @@ def segment_markdown(
         normalized = normalize_directive(raw)
         if not normalized:
             return
-        path = tuple(headings)
+        path = tuple(title for _level, title in heading_stack)
+        occurrence_key = (path, normalized)
+        occurrence = occurrences.get(occurrence_key, 0)
+        occurrences[occurrence_key] = occurrence + 1
         protected = force_protected or any(item.casefold() in protected_names for item in path)
         blocks.append(
             Directive(
-                id=_directive_id(logical_path, path, normalized),
+                id=_directive_id(logical_path, path, normalized, occurrence),
                 target=logical_path,
                 heading_path=path,
                 kind=kind,
@@ -156,8 +167,9 @@ def segment_markdown(
         if heading:
             level = len(heading.group(1))
             title = heading.group(2).strip()
-            headings[:] = headings[: level - 1]
-            headings.append(title)
+            while heading_stack and heading_stack[-1][0] >= level:
+                heading_stack.pop()
+            heading_stack.append((level, title))
             index += 1
             continue
         if not line.strip():
@@ -218,9 +230,6 @@ def segment_markdown(
         add_block(index, end, "paragraph")
         index = end
 
-    ids = [item.id for item in blocks]
-    if len(ids) != len(set(ids)):
-        fail("duplicate_directive_id", f"Duplicate directive IDs in {logical_path}")
     return tuple(blocks)
 
 

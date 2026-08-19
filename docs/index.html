@@ -45,15 +45,15 @@
       <div class="hero-orbit orbit-two" aria-hidden="true"></div>
       <div class="shell hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> v0.1.0 alpha · Local control plane · Anthropic-backed plans</p>
+          <p class="eyebrow"><span class="status-dot"></span> v0.2.0 alpha · Stable fixed point · Consumer-agent verification</p>
           <h1>Rewrite the rule.<br><em>Not another exception.</em></h1>
           <p class="hero-lede"><strong>Authority before confidence.</strong> A fluent rewrite has no
             authority of its own; current instructions, explicit corrections, scope, and handoff
             boundaries come first.</p>
           <p class="hero-lede">
-            Meditate consolidates the behavioral directives Claude Code and Codex load.
-            Local code weighs newer corrections against older context; a pinned Anthropic
-            model proposes exact operations; every target byte is archived before a write.
+            Meditate resolves identified defects in the behavioral directives Claude Code and
+            Codex load. A well-formed file is a successful byte-identical no-op. Changed plans
+            must survive a planner-blind owner suite before any target write.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="#start">Get started</a>
@@ -75,13 +75,14 @@
           <pre><code><span class="comment"># Inventory stays entirely local</span>
 <span class="prompt">$</span> meditate inspect --json
 
-<span class="comment"># Build a bounded, recoverable proposal</span>
+<span class="comment"># A stable file makes no provider call</span>
 <span class="prompt">$</span> meditate plan \
     --model claude-sonnet-4-6 \
     --max-output-tokens 8192
 
 <span class="output">65 directives inspected</span>
-<span class="output">1 replacement proposed</span>
+<span class="output">0 defects detected · stable_noop</span>
+<span class="output">0 model calls · 0 bytes changed</span>
 <span class="safe">0 target files changed</span></code></pre>
         </div>
       </div>
@@ -103,37 +104,32 @@
           <article class="comparison-card before-card">
             <p class="card-label">Monotonic append</p>
             <ol class="rule-stack">
-              <li><span>01</span> Commit only when explicitly asked.</li>
-              <li><span>02</span> Except after a successful release task.</li>
-              <li><span>03</span> Unless deployment belongs to another agent.</li>
-              <li><span>04</span> But always push when the user says “clean.”</li>
+              <li><span>01</span> Run <code>pytest</code> before creating a commit.</li>
+              <li><span>02</span> Run <code>pytest</code> before creating a commit.</li>
             </ol>
-            <p class="card-result bad">Four live rules. No resolution relation.</p>
+            <p class="card-result bad">One confirmed defect: an exact duplicate.</p>
           </article>
 
           <article class="comparison-card after-card">
             <p class="card-label">Illustrative proposal — not a verdict</p>
             <div class="resolved-rule">
               <span class="resolved-icon" aria-hidden="true">✓</span>
-              <p>
-                Follow the user’s current delivery scope. Persist a broader default only when
-                repeated or explicitly durable; preserve named handoff boundaries.
-              </p>
+              <p><strong>MUST</strong> run <code>pytest</code> before creating a commit.</p>
             </div>
             <ul class="lineage-list">
-              <li>All four predecessors retained in lineage</li>
-              <li>Newer corrections weighed, not blindly preferred</li>
-              <li>One consolidated directive proposed</li>
+              <li>Reason: catch regressions before recording a repository state</li>
+              <li>Scope: only when this task will create a commit</li>
+              <li>Boundary: no commit requested means this rule does not fire</li>
             </ul>
-            <p class="card-result good">One proposal with recoverable provenance.</p>
+            <p class="card-result good">One checkable proposal with recoverable provenance.</p>
           </article>
         </div>
         <div class="boundary-note">
           <p class="boundary-title">Illustration, not behavioral-equivalence proof</p>
           <p>
-            This four-rules-to-one example shows the shape of a proposal. It does not decide that
-            the replacement is semantically good or prove that it preserves predecessor behavior.
-            Human review remains required.
+            This exact-duplicate example shows the typed output shape. It does not prove that
+            a boundary example is executable or that an arbitrary rewrite preserves behavior.
+            The owner-authored consumer-agent suite remains the oracle for changed plans.
           </p>
         </div>
       </div>
@@ -158,13 +154,13 @@
           </article>
           <article class="feature-card">
             <span class="feature-number">03</span>
-            <h3>Total disposition</h3>
-            <p>The model must keep, replace, remove, relocate, or escalate every directive exactly once. Escalation is report-only.</p>
+            <h3>Total disposition, bounded model access</h3>
+            <p>Every source record is kept, replaced, removed, relocated, or escalated exactly once. The model sees only locally detected candidates; unrelated records are kept byte-for-byte.</p>
           </article>
           <article class="feature-card">
             <span class="feature-number">04</span>
-            <h3>Evidence, not vibes</h3>
-            <p>User interaction logs and optional Kindex entries affect vitality only through locally minted IDs, bounded quotes, and deterministic counts.</p>
+            <h3>Kindex means required</h3>
+            <p>When enabled and installed, every configured Kindex read must succeed. Failure is <code>kindex_required_failed</code>; durable evidence is never silently dropped to manufacture a plan.</p>
           </article>
         </div>
       </div>
@@ -235,32 +231,32 @@
         <div class="flow" aria-label="Meditate workflow">
           <article class="flow-step">
             <span>1</span>
-            <h3>Read</h3>
-            <p>Instruction targets, prompt indexes, opt-in histories, auto-memory, and active Kindex knowledge.</p>
+            <h3>Inspect</h3>
+            <p>Read configured targets, imports, histories, auto-memory, and required active Kindex knowledge locally.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>2</span>
-            <h3>Sanitize</h3>
-            <p>Stream, deduplicate, redact locally, preserve temporal breadth, and fit a hard token budget.</p>
+            <h3>Preflight</h3>
+            <p>Detect confirmed exact duplicates and conservative review candidates. With none, return <code>stable_noop</code> without credentials or a model call.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>3</span>
-            <h3>Plan</h3>
-            <p>Send current directive text and selected, locally redacted evidence to one pinned Anthropic model for exact operations.</p>
+            <h3>Compile</h3>
+            <p>Give one pinned planner only candidate directives and sanitized evidence. Render its typed RFC 2119 rule, reason, scope, and optional boundary locally.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>4</span>
             <h3>Verify</h3>
-            <p>Reject unknown IDs, invented quotes, unscoped moves, import drift, target changes during the model call, excessive churn, or secrets.</p>
+            <p>Run owner-authored probes against control, complete predecessor, and complete candidate bundles on the consuming Claude or Codex CLI.</p>
           </article>
           <div class="flow-arrow" aria-hidden="true">→</div>
           <article class="flow-step">
             <span>5</span>
             <h3>Archive + apply</h3>
-            <p>Bind attended approval to the exact plan hash, archive pre/post images, write atomically, and keep restoration exact.</p>
+            <p>Bind the plan and passed verification receipt, archive pre/post images, enforce apply authority, write atomically, and keep restoration exact.</p>
           </article>
         </div>
 
@@ -277,54 +273,77 @@
             already existed. Restored-baseline run <code>20260818T231558Z-6e8e4703</code> was
             rejected and not applied for violating this
             rule. Release review caught what the prior validator admitted; the run is now a
-            regression fixture the new gate must reject, not behavioral qualification. Semantic
-            verification remains <code>not_run</code>.
+            regression fixture the current gate must reject, not behavioral qualification.
           </p>
         </div>
 
         <div class="boundary-note">
-          <p class="boundary-title">Consolidation must reduce the configured instruction set</p>
+          <p class="boundary-title">The fixed point is stability, not shrinkage</p>
           <p>
-            Prompt v6/parser v20 remove model summary authorship: each deterministic report
-            summary is locally computed from validated dispositions, conflicts, and metrics.
-            Model-authored summaries are forbidden and rejected.
-            Replacements fail when a normalized
-            eight-word phrase repeats or when they newly add unsupported catch-alls such as
-            “other applicable actions,” “and similar,” or “etc.” Aggregate byte growth is archived
-            with <code>compression_regression</code>, emits no apply command, and cannot apply.
-            An individual directive may grow only when aggregate configured-target bytes decrease.
+            Prompt v10 (SHA-256 <code>d277c05d...</code>)/parser v25 optimize defect
+            resolution in this order: correctness, checkability, scope precision, then concision.
+            Byte counts are telemetry, never the
+            objective. A justified rationale may make a directive larger. Removing a directive
+            requires a cited ground; “reduce count” is not one.
           </p>
           <p>
-            Live prompt-v5 run <code>20260819T013715Z-67de2a2b</code> was rejected and not applied:
-            it grew by 898 bytes, repeated workflow prose, introduced “other applicable actions,”
-            and disagreed with the local directive count. That is structural proposal evidence,
-            not semantic qualification.
+            <code>exact_duplicate</code> is a confirmed local defect.
+            <code>exception_lineage</code> is only a review candidate: lexical overlap cannot
+            declare otherwise-valid prose wrong. A changed post-image that retains a confirmed
+            defect is rejected as <code>non_idempotent_proposal</code>; a review candidate may
+            remain when the planner correctly keeps it.
           </p>
           <p>
-            Final prompt-v6 Claude run <code>20260819T015515Z-120c6869</code> covered 65
-            directives as 64 keep/1 replace. Its +720-byte proposal was blocked with
-            <code>compression_regression</code>, emitted no apply command, and left target SHA
-            <code>441fe6e9...</code> unchanged. Codex run
-            <code>20260819T015632Z-a4fde49b</code> kept 33/33 directives with zero
-            changes/conflicts/delta, reported 4,276/32,768 configured-target bytes, emitted no
-            apply command, and left target SHA <code>0dd415bb...</code> unchanged.
-          </p>
-          <p>
-            Both used prompt v6 SHA <code>61f949...</code>, parser
-            <code>meditate-parser-v20</code>, model <code>claude-sonnet-4-6</code>, and
-            <code>semantic_verification=not_run</code>. These receipts qualify safe no-op and fail-closed
-            blocking behavior only, not behavioral equivalence.
+            Acceptance is executable: a well-formed fixture remains byte-identical, a defective
+            fixture is corrected, both results survive a second invocation, ten iterations over
+            the well-formed fixture do not drift, and every confirmed cluster in a multi-defect
+            fixture must resolve in one successful plan.
           </p>
         </div>
 
         <div class="boundary-note">
           <p class="boundary-title">Structural validation is not behavioral qualification</p>
           <p>
-            Every plan retains the requested model and binds the API-returned resolved model ID,
-            prompt version/hash, import graphs, and
-            <code>semantic_verification: not_run</code>. Until an owner-authored behavioral suite
-            exists, every mutation is attended-only, unattended apply fails closed, and human
-            report/diff review remains required.
+            A changed plan starts with <code>semantic_verification: required</code>.
+            <code>meditate verify</code> runs an owner-authored suite that the planner never sees,
+            presents the consumer only neutral scenarios and opaque case references, scores its
+            free-form ordered plans with private local literal detectors, binds verifier prompt,
+            schema, model, runner, target, and response hashes into an immutable receipt, and
+            requires coverage for every changed source directive. The candidate must pass every
+            case on every repeat, never regress below its predecessor on a case, and outperform
+            each designated control. Predecessor misses remain visible as baseline gaps; candidate
+            repairs remain visible as improvements. Codex runs in a fresh private
+            <code>CODEX_HOME</code>, ignores user config/rules, and requires
+            <code>OPENAI_API_KEY</code>, so global instructions and memory cannot contaminate the
+            control. A pass proves only those recorded cases on that recorded consumer/version/model;
+            it is not universal behavioral equivalence.
+            A no-change plan records <code>semantic_verification: not_applicable</code>.
+          </p>
+        </div>
+
+        <div class="boundary-note">
+          <p class="boundary-title">v0.2.0 live receipts: stable files stay stable; defective copies converge</p>
+          <p>
+            The restored live Claude and Codex targets produced zero-call, byte-identical
+            <code>stable_noop</code> runs <code>20260819T161206Z-d6dbad85</code> and
+            <code>20260819T161218Z-834d615b</code>. On disposable copies with one exact duplicate,
+            Claude plan <code>20260819T165955Z-1987f9ef</code> moved 67 directives/11,606 bytes to
+            66/11,378 and scored pre 18/18, post 18/18, control 0/18 on Claude Code 2.1.224 with
+            <code>claude-sonnet-4-6</code>; verification SHA
+            <code>4f1851d08ddb4047243f6978204bda6b29ad59d245dd744a020e31321eb878aa</code>
+            authorized attended apply to the disposable copy, and second run
+            <code>20260819T170602Z-39e3bba4</code> was a zero-call identical no-op. Codex plan
+            <code>20260819T171655Z-546b02cd</code> moved
+            35 directives/5,269 bytes to 34/4,830 and scored post 18/18, control 0/18 on Codex CLI
+            0.147.0 with <code>gpt-5.6-sol</code> in a clean home; one predecessor repeat miss was
+            repaired and reported. Verification SHA
+            <code>0376960893146c8f9f29559da0fee2a9f14a0b182eae3759689dda2b0e915b1d</code>
+            authorized attended apply to the disposable copy, and second run
+            <code>20260819T171954Z-d68b18c5</code> was also a zero-call identical no-op. A
+            lower-position Claude rewrite
+            <code>20260819T165129Z-70f323ea</code> fell from 18/18 to 17/18, failed closed, and was
+            never applied. These six owner-authored Kindex cases are bounded evidence, not a
+            universal claim or a promise about future models.
           </p>
         </div>
 
@@ -440,9 +459,9 @@
       <div class="shell start-grid">
         <div>
           <p class="eyebrow">Get started</p>
-          <h2>Inspect first. Apply only after reading the report.</h2>
+          <h2>Inspect first. Verify behavior before a changed apply.</h2>
           <p class="start-copy">
-            The canonical v0.1.0 public artifact is the versioned wheel attached to its GitHub
+            The canonical v0.2.0 public artifact is the versioned wheel attached to its GitHub
             Release. PyPI publication is not claimed, and CI does not publish. Contributors can
             still clone the repository for an editable install.
           </p>
@@ -453,7 +472,7 @@
             <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
           </div>
           <pre id="install-code"><code>python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.1.0/meditate_agent-0.1.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.2.0/meditate_agent-0.2.0-py3-none-any.whl
 .venv/bin/meditate init
 .venv/bin/meditate inspect</code></pre>
         </div>
@@ -473,6 +492,7 @@
               <tr><td><code>meditate init</code></td><td>Write a commented TOML configuration.</td><td>Config only</td></tr>
               <tr><td><code>meditate inspect</code></td><td>Inventory targets and evidence locally. No model call.</td><td>None</td></tr>
               <tr><td><code>meditate plan</code></td><td>Create and validate a bounded proposal and report.</td><td>Archives only</td></tr>
+              <tr><td><code>meditate verify</code></td><td>Run an owner-authored planner-blind suite on control, predecessor, and candidate bundles.</td><td>Verification artifacts only</td></tr>
               <tr><td><code>meditate decisions</code></td><td>Show one exact pending a/b/c/custom authority question and response argv.</td><td>None</td></tr>
               <tr><td><code>meditate decide</code></td><td>Transmit the exact asserted response and frozen context to Anthropic for a successor plan.</td><td>Archives only</td></tr>
               <tr><td><code>meditate apply</code></td><td>Apply one archived plan with exact hash approval.</td><td>Allowlisted targets</td></tr>
@@ -486,7 +506,7 @@
         <div class="reference-links">
           <a href="https://github.com/jmcentire/meditate/blob/main/README.md">Full usage guide <span aria-hidden="true">↗</span></a>
           <a href="https://github.com/jmcentire/meditate/blob/main/docs/design-brief.md">Design and authority contracts <span aria-hidden="true">↗</span></a>
-          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.1.0 changelog <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/jmcentire/meditate/blob/main/CHANGELOG.md">v0.2.0 changelog <span aria-hidden="true">↗</span></a>
           <a href="llms.txt">Agent-readable index <span aria-hidden="true">→</span></a>
         </div>
       </div>
@@ -494,11 +514,11 @@
 
     <section class="section closing-section">
       <div class="shell closing-card">
-        <p class="eyebrow">A smaller durable state</p>
+        <p class="eyebrow">A stable durable state</p>
         <h2>Your instruction file should be maintained like code—not accumulated like a chat log.</h2>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/jmcentire/meditate">Explore the repository</a>
-          <a class="button button-secondary" href="#start">Install v0.1.0</a>
+          <a class="button button-secondary" href="#start">Install v0.2.0</a>
         </div>
       </div>
     </section>

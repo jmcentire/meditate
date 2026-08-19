@@ -8,7 +8,13 @@ from typing import Any
 
 import pytest
 from conftest import ConfigFactory
-from helpers import StubProvider, inspection, keep_all, replace_matching
+from helpers import (
+    StubProvider,
+    empty_compiled_directive,
+    inspection,
+    keep_all,
+    replace_matching,
+)
 
 import meditate.plan as plan_module
 import meditate.transaction as transaction
@@ -17,6 +23,7 @@ from meditate.models import Authority, EvidenceEvent, RunUsage
 from meditate.plan import (
     PLAN_PROMPT_VERSION,
     PLAN_SCHEMA,
+    SEMANTIC_VERIFICATION,
     SYSTEM_PROMPT,
     _packet,
     create_plan,
@@ -25,11 +32,6 @@ from meditate.provider import AnthropicProvider
 from meditate.report import write_plan_report
 from meditate.transaction import apply_run
 from meditate.util import MeditateError, canonical_json_bytes, sha256_bytes
-
-SEMANTIC_VERIFICATION = {
-    "status": "not_run",
-    "method": "owner_defined_behavioral_suite",
-}
 
 
 @pytest.fixture
@@ -312,7 +314,7 @@ def test_cli_plan_json_exposes_prompt_and_semantic_verification(
     target.write_text("# Rules\n\n- Preserve hand edits.\n", encoding="utf-8")
     config_path = tmp_path / "meditate.toml"
     config_path.write_text(_minimal_config_text(target, tmp_path), encoding="utf-8")
-    monkeypatch.setenv("WANDER_ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
 
     def complete(
         _provider: AnthropicProvider,
@@ -321,26 +323,25 @@ def test_cli_plan_json_exposes_prompt_and_semantic_verification(
         payload: str,
         schema: dict[str, Any],
     ) -> tuple[str, RunUsage]:
-        assert system == SYSTEM_PROMPT
-        packet = json.loads(payload)
-        return json.dumps(keep_all(packet)), RunUsage(
-            calls=1,
-            actual_input_tokens=1,
-            actual_output_tokens=1,
-            stop_reason="end_turn",
-        )
+        raise AssertionError("the local no-candidate gate must not invoke the provider")
 
     monkeypatch.setattr(AnthropicProvider, "complete", complete)
     assert main(["plan", "--config", str(config_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     expected = {
         "schema_version": 1,
-        "model_id": "claude-sonnet-4-6",
+        "model_id": "not-invoked",
         "prompt_version": PLAN_PROMPT_VERSION,
         "prompt_sha256": sha256_bytes(SYSTEM_PROMPT.encode("utf-8")),
-        "semantic_verification": SEMANTIC_VERIFICATION,
+        "semantic_verification": {
+            "status": "not_applicable",
+            "method": SEMANTIC_VERIFICATION["method"],
+        },
     }
     _assert_exposes_provenance(payload, expected)
+    assert payload["consolidation_preflight"]["provider_called"] is False
+    assert payload["blocked_reasons"] == []
+    assert payload["consolidation_preflight"]["outcome"] == "stable_noop"
 
 
 def _escalation_events(*, same_group: bool = False) -> tuple[EvidenceEvent, EvidenceEvent]:
@@ -369,7 +370,7 @@ def _escalation_builder(
         change = {
             "action": "escalate",
             "source_ids": [source["id"]],
-            "replacement": "",
+            "compiled_directive": empty_compiled_directive(),
             "destination_target": target["target"],
             "heading_path": source["heading_path"],
             "evidence": [{"id": event["id"], "quote": event["text"]} for event in events],
@@ -616,7 +617,7 @@ def _contextual_relocation_builder(
                 {
                     "action": "relocate",
                     "source_ids": [source["id"]],
-                    "replacement": source["text"],
+                    "compiled_directive": empty_compiled_directive(),
                     "destination_target": destination_override or destination_target["target"],
                     "heading_path": ["Python"],
                     "evidence": [{"id": event["id"], "quote": event["text"]}],

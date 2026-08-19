@@ -16,7 +16,12 @@ from typing import Any
 from . import plan as plan_module
 from .config import Config
 from .imports import build_import_graph
-from .plan import PARSER_VERSION, SEMANTIC_VERIFICATION
+from .plan import (
+    LEGACY_SEMANTIC_VERIFICATION,
+    PARSER_VERSION,
+    SEMANTIC_VERIFICATION,
+    SEMANTIC_VERIFICATION_METHOD,
+)
 from .report import append_log
 from .util import (
     SCHEMA_VERSION,
@@ -96,6 +101,7 @@ def _verified_artifacts(
         "prompt_version",
         "prompt_sha256",
         "semantic_verification",
+        "consolidation_preflight",
         "decision_request",
         "operator_decision",
         "parent_plan_sha256",
@@ -121,7 +127,12 @@ def _verified_artifacts(
         not isinstance(plan["prompt_sha256"], str) or len(plan["prompt_sha256"]) != 64
     ):
         fail("archive_corrupt", f"Run {run_id} has invalid prompt hash")
-    if "semantic_verification" in plan and plan["semantic_verification"] != SEMANTIC_VERIFICATION:
+    semantic = plan.get("semantic_verification")
+    valid_semantic_states = semantic in (
+        LEGACY_SEMANTIC_VERIFICATION,
+        SEMANTIC_VERIFICATION,
+    ) or semantic == {"status": "not_applicable", "method": SEMANTIC_VERIFICATION_METHOD}
+    if not valid_semantic_states:
         fail("archive_corrupt", f"Run {run_id} has invalid semantic verification state")
     blocked_reasons = plan.get("blocked_reasons")
     if not isinstance(blocked_reasons, list) or not all(
@@ -526,11 +537,6 @@ def apply_run(
         run_dir, plan, manifest, state = _verified_artifacts(config, run_id)
         if state.get("state") != "planned" or state.get("consumed"):
             fail("plan_consumed", f"Run {run_id} is not an unused planned run")
-        if mode == "unattended":
-            fail(
-                "semantic_verification_required",
-                "Unattended apply requires an owner-defined behavioral qualification suite",
-            )
         if (
             plan.get("parser_version") != PARSER_VERSION
             or manifest.get("parser_version") != PARSER_VERSION
@@ -557,15 +563,34 @@ def apply_run(
                 "decision_required",
                 "The plan has a pending operator authority decision and cannot be applied",
             )
-        if "compression_regression" in blocked:
-            fail(
-                "compression_regression",
-                "Aggregate post-plan bytes exceed pre-plan bytes; generate a smaller plan",
-            )
         if blocked:
             fail("plan_blocked", f"Plan is blocked: {', '.join(str(item) for item in blocked)}")
+        targets_raw = manifest.get("targets")
+        targets = (
+            [item for item in targets_raw if item.get("changed", True)]
+            if isinstance(targets_raw, list) and all(isinstance(item, dict) for item in targets_raw)
+            else None
+        )
+        if targets is None:
+            fail("archive_corrupt", "Manifest targets are invalid")
+        if not targets:
+            fail("no_changes", f"Run {run_id} has no target changes to apply")
+        from .verification import load_passed_verification
+
+        verification = load_passed_verification(run_dir, plan)
         plan_sha = str(plan["plan_sha256"])
-        if mode == "attended" and approval_sha256 != plan_sha:
+        if mode == "unattended":
+            if not config.apply.allow_unattended_apply:
+                fail("unattended_disabled", "Configuration does not allow unattended apply")
+            if plan.get("minimum_apply_mode") != "unattended":
+                fail("attended_required", "This plan is classified attended-only")
+            attended_applies = int(_ledger(config).get("attended_applies", 0))
+            if attended_applies < config.apply.minimum_attended_applies:
+                fail(
+                    "attended_history_required",
+                    "Unattended apply has not reached its configured attended-history threshold",
+                )
+        elif approval_sha256 != plan_sha:
             fail("approval_required", f"Attended apply requires --approve {plan_sha}")
 
         expected_before_graph = plan.get("import_graph_before")
@@ -578,16 +603,6 @@ def apply_run(
                 "Claude import graph changed after planning; generate a new plan",
             )
 
-        targets_raw = manifest.get("targets")
-        targets = (
-            [item for item in targets_raw if item.get("changed", True)]
-            if isinstance(targets_raw, list) and all(isinstance(item, dict) for item in targets_raw)
-            else None
-        )
-        if targets is None:
-            fail("archive_corrupt", "Manifest targets are invalid")
-        if not targets:
-            fail("no_changes", f"Run {run_id} has no target changes to apply")
         _free_space_preflight(config, targets, run_dir)
         allowed = config.allowed_targets
         prepared: list[tuple[dict[str, Any], Path, bytes, bytes]] = []
@@ -709,6 +724,15 @@ def apply_run(
             "prompt_version": plan.get("prompt_version"),
             "prompt_sha256": plan.get("prompt_sha256"),
             "semantic_verification": plan.get("semantic_verification"),
+            "semantic_qualification": {
+                "status": verification.get("status"),
+                "suite_id": verification.get("suite_id"),
+                "suite_sha256": verification.get("suite_sha256"),
+                "verification_sha256": verification.get("verification_sha256"),
+                "agent": verification.get("agent"),
+                "requested_model": verification.get("requested_model"),
+                "runner_version": verification.get("runner_version"),
+            },
             "metrics": plan.get("metrics"),
             "targets": [
                 {"path": target["logical_path"], "post_sha256": target["post_sha256"]}

@@ -239,6 +239,7 @@ class ValidatedPlan:
     prompt_version: str = ""
     prompt_sha256: str = ""
     semantic_verification: dict[str, str] = field(default_factory=dict)
+    consolidation_preflight: dict[str, Any] = field(default_factory=dict)
     post_directive_count: int = 0
     escalated_directive_count: int = 0
     metrics: dict[str, Any] = field(default_factory=dict)
