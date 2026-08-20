@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .config import Config
+from .config import Config, with_archived_target_selection
 from .models import InspectionResult, ValidatedPlan
 from .plan import (
     MAX_CUSTOM_DECISION_CHARS,
@@ -238,7 +238,7 @@ def _frozen_context(
     run_dir: Path,
     plan: dict[str, Any],
     manifest: dict[str, Any],
-) -> tuple[dict[str, Any], InspectionResult]:
+) -> tuple[dict[str, Any], InspectionResult, Config]:
     if (
         plan.get("config_sha256") != config.hash
         or manifest.get("config_sha256") != config.hash
@@ -256,6 +256,7 @@ def _frozen_context(
             "Configuration, prompt, parser, provider, or requested model changed "
             "after the question",
         )
+    effective_config = with_archived_target_selection(config, plan.get("target_selection"))
     packet_path = run_dir / "evidence.json"
     if packet_path.is_symlink() or not packet_path.is_file():
         fail("decision_context_drift", "Parent evidence packet is missing or unsafe")
@@ -285,7 +286,9 @@ def _frozen_context(
     source_stats = manifest.get("source_stats")
     if not isinstance(source_stats, dict):
         fail("decision_context_drift", "Parent source statistics are malformed")
-    inspection = inspection_from_frozen_packet(config, packet, source_stats)
+    if packet.get("target_selection") != effective_config.target_selection:
+        fail("decision_context_drift", "Parent packet target selection is inconsistent")
+    inspection = inspection_from_frozen_packet(effective_config, packet, source_stats)
 
     expected_targets = manifest.get("targets")
     if not isinstance(expected_targets, list) or not all(
@@ -294,6 +297,7 @@ def _frozen_context(
         fail("decision_context_drift", "Parent target manifest is malformed")
     expected = {
         str(item.get("logical_path")): (
+            item.get("semantic_sha256", item.get("pre_sha256")),
             item.get("pre_sha256"),
             item.get("existed"),
             item.get("mode"),
@@ -301,7 +305,12 @@ def _frozen_context(
         for item in expected_targets
     }
     observed = {
-        target.logical_path: (target.sha256, target.existed, target.mode)
+        target.logical_path: (
+            target.sha256,
+            target.archived_preimage_sha256,
+            target.existed,
+            target.mode,
+        )
         for target in inspection.targets
     }
     if observed != expected:
@@ -315,7 +324,22 @@ def _frozen_context(
     allowed_targets = packet.get("allowed_targets")
     if allowed_targets != [target.logical_path for target in inspection.targets]:
         fail("decision_context_drift", "Configured target order changed after the question")
-    return packet, inspection
+    expected_inputs = manifest.get("input_documents")
+    observed_inputs = [
+        {
+            "path": str(item.path),
+            "logical_path": item.logical_path,
+            "sha256": item.sha256,
+            "bytes": len(item.content_bytes),
+            "mode": item.mode,
+            "existed": item.existed,
+            "frontmatter": bool(item.frontmatter),
+        }
+        for item in inspection.input_documents
+    ]
+    if expected_inputs != observed_inputs:
+        fail("decision_context_drift", "Semantic input bytes changed after the question")
+    return packet, inspection, effective_config
 
 
 def resolve_decision(
@@ -411,7 +435,7 @@ def resolve_decision(
             "resolved_request_ids": [*resolved_ids, request_id],
             "conflict_fingerprints": [*fingerprints, fingerprint],
         }
-        packet, inspection = _frozen_context(config, run_dir, plan, manifest)
+        packet, inspection, effective_config = _frozen_context(config, run_dir, plan, manifest)
         dropped = manifest.get("dropped_evidence_ids", [])
         if not isinstance(dropped, list) or not all(isinstance(item, str) for item in dropped):
             fail("decision_context_drift", "Parent dropped-evidence lineage is malformed")
@@ -420,7 +444,7 @@ def resolve_decision(
         ):
             fail("decision_context_drift", "Provider or requested model changed after the question")
         return create_plan(
-            config,
+            effective_config,
             provider=provider,
             inspection=inspection,
             frozen_packet=packet,

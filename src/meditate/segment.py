@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import re
 import stat
 import unicodedata
+from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from .config import Config
-from .models import Directive, TargetDocument
+from .models import Directive, InputDocument, TargetDocument
 from .util import SCHEMA_VERSION, display_path, fail, sha256_bytes, sha256_text
 
 _HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*(?:\r?\n)?$")
@@ -65,6 +68,22 @@ def parse_paths_frontmatter(content: str) -> tuple[str, ...]:
         if value:
             paths.append(value)
     return tuple(dict.fromkeys(paths))
+
+
+def split_frontmatter(content: str) -> tuple[str, str]:
+    """Split a character-faithful YAML envelope from a valid UTF-8 document body."""
+
+    lines = content.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return "", content
+    end = next(
+        (index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---"),
+        -1,
+    )
+    if end < 0:
+        return "", content
+    boundary = sum(len(line) for line in lines[: end + 1])
+    return content[:boundary], content[boundary:]
 
 
 def is_claude_rules_target(path: Path, config: Config) -> bool:
@@ -158,6 +177,7 @@ def segment_markdown(
                 raw=raw,
                 normalized=normalized,
                 protected=protected,
+                source_path=logical_path,
             )
         )
 
@@ -233,50 +253,233 @@ def segment_markdown(
     return tuple(blocks)
 
 
-def load_targets(config: Config) -> tuple[TargetDocument, ...]:
-    documents: list[TargetDocument] = []
-    for configured in config.targets:
-        path = configured.expanduser().absolute()
-        if path.is_symlink():
+def _read_input(path: Path, *, require_existing: bool) -> InputDocument:
+    try:
+        initial = path.lstat()
+    except FileNotFoundError:
+        initial = None
+    if initial is not None:
+        if stat.S_ISLNK(initial.st_mode):
             fail("symlink_target", f"Refusing symlinked target: {path}")
-        existed = path.exists()
-        if existed:
-            info = path.lstat()
-            if not stat.S_ISREG(info.st_mode):
-                fail("non_regular_target", f"Target is not a regular file: {path}")
-            data = path.read_bytes()
-            mode = stat.S_IMODE(info.st_mode)
-        else:
-            if not path.parent.exists() or path.parent.is_symlink():
-                fail(
-                    "missing_target_parent",
-                    f"Target parent must exist and not be a symlink: {path.parent}",
-                )
-            data = b""
-            mode = 0o644
+        if not stat.S_ISREG(initial.st_mode):
+            fail("non_regular_target", f"Target is not a regular file: {path}")
+        descriptor = -1
         try:
-            content = data.decode("utf-8")
-        except UnicodeDecodeError:
-            fail("target_not_utf8", f"Instruction target is not UTF-8: {path}")
-        logical = display_path(path)
-        directives = segment_markdown(
-            content,
-            logical_path=logical,
-            protected_headings=config.safety.protected_headings,
-        )
-        documents.append(
-            TargetDocument(
-                path=path,
-                logical_path=logical,
-                content=content,
-                content_bytes=data,
-                sha256=sha256_bytes(data),
-                mode=mode,
-                existed=existed,
-                directives=directives,
-                scope_paths=(
-                    parse_paths_frontmatter(content) if is_claude_rules_target(path, config) else ()
-                ),
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode):
+                fail("non_regular_target", f"Target changed type while opening: {path}")
+            if (opened.st_dev, opened.st_ino) != (initial.st_dev, initial.st_ino):
+                fail("source_drift", f"Target changed while opening: {path}")
+            chunks: list[bytes] = []
+            while chunk := os.read(descriptor, 1024 * 1024):
+                chunks.append(chunk)
+            data = b"".join(chunks)
+        except OSError as exc:
+            fail("target_read_failed", f"Cannot safely read target {path}: {exc}")
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        existed = True
+        mode = stat.S_IMODE(opened.st_mode)
+        device = opened.st_dev
+        inode = opened.st_ino
+    else:
+        if require_existing:
+            fail("input_missing", f"Semantic input does not exist: {path}")
+        if not path.parent.exists() or path.parent.is_symlink():
+            fail(
+                "missing_target_parent",
+                f"Target parent must exist and not be a symlink: {path.parent}",
             )
+        data = b""
+        existed = False
+        mode = 0o644
+        device = 0
+        inode = 0
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("target_not_utf8", f"Instruction target is not UTF-8: {path}")
+    frontmatter, body = split_frontmatter(content)
+    return InputDocument(
+        path=path,
+        logical_path=display_path(path),
+        content=content,
+        content_bytes=data,
+        sha256=sha256_bytes(data),
+        mode=mode,
+        existed=existed,
+        device=device,
+        inode=inode,
+        frontmatter=frontmatter,
+        body=body,
+    )
+
+
+def _combined_content(
+    inputs: tuple[InputDocument, ...],
+    primary: InputDocument,
+    *,
+    reuse_primary_directives: bool,
+) -> tuple[
+    str,
+    tuple[str, ...],
+    tuple[tuple[int, int, str], ...],
+    tuple[str, ...],
+]:
+    if len(inputs) == 1:
+        return inputs[0].content, (), ((0, len(inputs[0].content), inputs[0].logical_path),), ()
+    newline = "\r\n" if "\r\n" in primary.content else "\n"
+    bodies = [(item, item.body.strip("\r\n")) for item in inputs if item.body.strip()]
+    envelope = primary.frontmatter.rstrip("\r\n")
+    chunks: list[str] = []
+    spans: list[tuple[int, int, str]] = []
+    represented: list[str] = []
+    cursor = 0
+    primary_directives = Counter(
+        (directive.heading_path, directive.raw)
+        for directive in segment_markdown(primary.body, logical_path=primary.logical_path)
+    )
+    if envelope:
+        chunks.append(envelope)
+        cursor += len(envelope)
+    for item, body in bodies:
+        if reuse_primary_directives and item.path != primary.path:
+            item_directives = Counter(
+                (directive.heading_path, directive.raw)
+                for directive in segment_markdown(item.body, logical_path=item.logical_path)
+            )
+            if item_directives and all(
+                primary_directives[signature] >= count
+                for signature, count in item_directives.items()
+            ):
+                represented.append(item.logical_path)
+                continue
+        if chunks:
+            separator = newline * 2
+            chunks.append(separator)
+            cursor += len(separator)
+        start = cursor
+        chunks.append(body)
+        cursor += len(body)
+        spans.append((start, cursor, item.logical_path))
+    content = "".join(chunks)
+    if content:
+        content += newline
+    else:
+        content = primary.content
+        spans.append((0, len(content), primary.logical_path))
+    secondary = tuple(
+        item.logical_path for item in inputs if item.path != primary.path and bool(item.frontmatter)
+    )
+    return content, secondary, tuple(spans), tuple(represented)
+
+
+def load_target_set(config: Config) -> tuple[tuple[TargetDocument, ...], tuple[InputDocument, ...]]:
+    """Load ordered semantic inputs and construct the exact writable document set."""
+
+    output_mode = config.runtime_output is not None
+    inputs = tuple(
+        _read_input(configured.expanduser().absolute(), require_existing=output_mode)
+        for configured in config.input_targets
+    )
+    physical_inputs: dict[tuple[int, int], str] = {}
+    for item in inputs:
+        if not item.existed:
+            continue
+        identity = (item.device, item.inode)
+        earlier = physical_inputs.get(identity)
+        if earlier is not None:
+            fail(
+                "duplicate_target",
+                f"The same physical input was supplied more than once: {earlier} and "
+                f"{item.logical_path}",
+            )
+        physical_inputs[identity] = item.logical_path
+    if not output_mode:
+        documents = tuple(
+            TargetDocument(
+                path=item.path,
+                logical_path=item.logical_path,
+                content=item.content,
+                content_bytes=item.content_bytes,
+                sha256=item.sha256,
+                mode=item.mode,
+                existed=item.existed,
+                directives=segment_markdown(
+                    item.content,
+                    logical_path=item.logical_path,
+                    protected_headings=config.safety.protected_headings,
+                ),
+                scope_paths=(
+                    parse_paths_frontmatter(item.content)
+                    if is_claude_rules_target(item.path, config)
+                    else ()
+                ),
+                preimage_bytes=item.content_bytes,
+                preimage_sha256=item.sha256,
+                frontmatter_source=item.logical_path if item.frontmatter else "",
+            )
+            for item in inputs
         )
-    return tuple(documents)
+        return documents, inputs
+
+    output = config.runtime_output
+    if output is None:  # pragma: no cover - narrowed by output_mode
+        fail("invalid_target_override", "Output mode requires an output path")
+    output_path = output.expanduser().absolute()
+    by_path = {item.path: item for item in inputs}
+    preimage = by_path.get(output_path) or _read_input(output_path, require_existing=False)
+    primary = by_path.get(output_path) or inputs[0]
+    content, secondary_frontmatter, source_spans, represented_sources = _combined_content(
+        inputs,
+        primary,
+        reuse_primary_directives=output_path in by_path,
+    )
+    content_bytes = content.encode("utf-8")
+    logical = display_path(output_path)
+    directives = segment_markdown(
+        content,
+        logical_path=logical,
+        protected_headings=config.safety.protected_headings,
+    )
+    attributed_directives = tuple(
+        replace(
+            directive,
+            source_path=next(
+                (
+                    source_path
+                    for start, end, source_path in source_spans
+                    if start <= directive.start < end
+                ),
+                primary.logical_path,
+            ),
+        )
+        for directive in directives
+    )
+    target = TargetDocument(
+        path=output_path,
+        logical_path=logical,
+        content=content,
+        content_bytes=content_bytes,
+        sha256=sha256_bytes(content_bytes),
+        mode=preimage.mode,
+        existed=preimage.existed,
+        directives=attributed_directives,
+        scope_paths=(
+            parse_paths_frontmatter(content) if is_claude_rules_target(output_path, config) else ()
+        ),
+        preimage_bytes=preimage.content_bytes,
+        preimage_sha256=preimage.sha256,
+        frontmatter_source=primary.logical_path if primary.frontmatter else "",
+        secondary_frontmatter_sources=secondary_frontmatter,
+        represented_input_sources=represented_sources,
+    )
+    return (target,), inputs
+
+
+def load_targets(config: Config) -> tuple[TargetDocument, ...]:
+    """Compatibility wrapper returning only writable semantic documents."""
+
+    return load_target_set(config)[0]

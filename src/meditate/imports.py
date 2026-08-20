@@ -62,11 +62,17 @@ def build_import_graph(
     config: Config,
     *,
     overrides: dict[Path, tuple[bytes, bool]] | None = None,
+    include_writable_roots: bool = False,
 ) -> ImportGraph:
     """Build a validated graph, optionally substituting proposed target bytes."""
 
-    configured = {path.expanduser().absolute() for path in config.targets}
-    roots = tuple(sorted(path for path in configured if path.name in _CLAUDE_ROOT_NAMES))
+    configured = {
+        path.expanduser().absolute() for path in (*config.input_targets, *config.writable_targets)
+    }
+    root_candidates = {path.expanduser().absolute() for path in config.input_targets}
+    if include_writable_roots:
+        root_candidates.update(path.expanduser().absolute() for path in config.writable_targets)
+    roots = tuple(sorted(path for path in root_candidates if path.name in _CLAUDE_ROOT_NAMES))
     override_map = {
         path.expanduser().absolute(): value for path, value in (overrides or {}).items()
     }

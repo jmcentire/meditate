@@ -2,7 +2,7 @@
 
 Canonical docs: https://jmcentire.github.io/meditate/
 Source: https://github.com/jmcentire/meditate
-Version described: 0.4.0 alpha
+Version described: 0.5.0 alpha
 Snapshot: 2026-08-19
 License: MIT
 Runtime: Python 3.11+
@@ -11,7 +11,7 @@ Runtime: Python 3.11+
 
 Operator instructions, explicit corrections, applicable scope, and named-actor handoff boundaries outrank model fluency, recency alone, evidence volume, and structural confidence. Temporal order informs an older record instead of deleting it. A newer record wins only when authority and scope permit it.
 
-Meditate is a local behavioral-contract compiler and policy router. Version 0.4 provides evidence-grounded semantic nomination, bounded directive compilation, and archive-first reversible execution over locally admitted candidates. Evidence-grounded missing rules can become reversible introductions into exact configured targets. It addresses monotonic append: after a correction, another exception is recorded without revising the rule that caused the failure. It is not a generic provider-state, vector-store, workspace, side-effect, cache, or model-weight scrubber.
+Meditate is a local behavioral-contract compiler and policy router. Version 0.5 provides evidence-grounded semantic nomination, bounded directive compilation, archive-first reversible execution, and direct target/output compilation. Evidence-grounded missing rules can become reversible introductions into exact writable targets. It addresses monotonic append: after a correction, another exception is recorded without revising the rule that caused the failure. It is not a generic provider-state, vector-store, workspace, side-effect, cache, or model-weight scrubber.
 
 ## Objective and fixed point
 
@@ -39,7 +39,31 @@ Executable acceptance covers a well-formed unchanged fixture, a corrected defect
 
 Default durable evidence order is: explicit user correction with an antecedent; current version-controlled instruction qualified by scope; repeated user preference across independent sessions; deterministic outcome evidence; active Kindex knowledge with provenance; agent auto-memory; assistant inference. Kindex is an optional local persistent knowledge graph exposed through the `kin` CLI. Authority, semantic domain, scope, supersession, recency, and corroboration are separate dimensions. Retrieval relevance never creates authority.
 
-Instruction files, histories, auto-memory, imports, and Kindex are read-only evidence. The tool writes only exact configured targets. If Kindex is enabled and `kin` is installed, all configured searches and requested node reads are mandatory. Any failure aborts before planning with `kindex_required_failed`; Meditate never silently creates a plan from partial durable evidence.
+Histories, auto-memory, imports, and Kindex are read-only evidence. Instruction files are read-only unless they are exact configured or invocation-local writable targets. If Kindex is enabled and `kin` is installed, all configured searches and requested node reads are mandatory. Any failure aborts before planning with `kindex_required_failed`; Meditate never silently creates a plan from partial durable evidence.
+
+## Direct target/output compilation
+
+`meditate inspect`, `meditate plan`, and `meditate run` accept ordered `--target FILE`, and the flag may appear more than once. An explicit list replaces configured targets for that invocation without rewriting TOML. With no `--output`, selected inputs are planned jointly, rendered to their own paths, and applied as one rollback-capable transaction; each has an exact pre-image. With `--output FILE`, every input is read-only and the output is the sole writable target.
+
+The output may also be one input. `--target AGENTS.md --target CLAUDE.md --output AGENTS.md` treats both ordered bodies as semantic input, archives the original AGENTS file as the physical pre-image, writes only AGENTS, and leaves CLAUDE byte-identical. For a distinct output, its existing bytes are backup material but are not semantic input unless it is explicitly selected. Restore replaces an existing output or removes a newly created output.
+
+Output-as-input has a fixed point for already compiled exact content. If every directive in a secondary input, counted as exact raw bytes plus heading path, is already represented in the current output input, Meditate records that source and does not append it again. Similar or partially represented prose is never suppressed by this rule, and every input hash remains bound in the selection artifact.
+
+Target selection is a canonical hash-bound artifact: source (`config` or `cli`), mode, exact ordered absolute inputs, exact writable targets, optional output, and selection SHA-256. Plan, manifest, packet, and reports bind the selection plus every input path/hash/mode/existence bit. `decide` replays frozen evidence and rechecks live inputs. `apply` reconstructs archived authority, rechecks all read-only inputs and the writable physical pre-image, and writes nothing on drift. Later commands therefore neither need nor accept repeated target flags.
+
+YAML frontmatter is a document envelope. Output-as-input frontmatter wins; otherwise the first input supplies it. Secondary envelopes are omitted rather than merged. This is a successful run with an explicit non-blocking warning naming every omitted envelope. Bodies retain CLI order, and each composed directive retains its original source path in model input.
+
+Reads use no-follow file descriptors and compare opened device/inode identity to lstat. Symlinks, non-regular inputs, open-time identity changes, and hard-link aliases in one input list fail closed. The output parent must already exist. The private content-addressed run archive is the backup; no sibling `.bak` file is created, and recovery remains until explicit purge.
+
+Explicit target/output paths are operator authority and may name any path the OS account can access. The model receives only opaque allowed destinations and cannot invent one. Meditate is not a filesystem sandbox; same-user compromise remains outside its threat boundary.
+
+## v0.5.0 live target/output receipts
+
+- In-place SKILL run `20260820T013809Z-a65bd797` changed `d6fbdfbe...` to `1a87ba79...` by removing one locally confirmed exact duplicate, then restored the exact original.
+- Distinct-output run `20260820T013825Z-3ccd9834` compiled two read-only inputs, changed legacy output `8220090e...` to `d363b74e...`, preserved both sources, and restored the legacy bytes.
+- Overlapping-output run `20260820T013836Z-60c301c4` changed only AGENTS from `11715558...` to `37d5953b...`, preserved read-only CLAUDE at `ee0b1ef6...`, and restored AGENTS exactly. Repeat `20260820T013850Z-874628d9` was a zero-write `stable_noop`; exact repeat `20260820T013856Z-0c0593ca` was byte-identical and made zero provider calls.
+
+All used `claude-sonnet-4-6`, Drafter prompt v18/parser v34. Semantic verification was `not_run` or `not_applicable`; these receipts prove target/output authority, write isolation, fixed-point composition, archive, and restore, not behavioral equivalence.
 
 ## Five total dispositions
 
@@ -47,7 +71,7 @@ Every source directive appears exactly once as keep, replace, remove, relocate, 
 
 - keep copies source bytes unchanged.
 - replace locally renders a typed compiled directive at the source location.
-- remove deletes only with a cited ground: explicit supersession, an explicit resolved user decision, provably dead scope, or explicit user confirmation. A size quota is not a ground.
+- remove deletes only with a cited ground: explicit supersession, an explicit resolved user decision, provably dead scope, or explicit user confirmation. The sole source-only exception is a locally confirmed exact-duplicate cluster when an identical peer remains kept byte-for-byte. A size quota is not a ground.
 - relocate moves specific content to one exact configured target. Contextual relocation requires an exact configured `.claude/rules/` Markdown target with non-empty `paths:` frontmatter; Meditate never invents a glob.
 - escalate is report-only. Source bytes remain unchanged while the report names a deterministic hook/settings candidate. It requires independent evidence groups and never installs enforcement.
 
@@ -137,7 +161,7 @@ A Claude `CLAUDE.md` post-state over 200 lines is a guidance status, not a repre
 
 ## Provenance, recovery, and privacy
 
-Plans bind schema version, requested model, API-returned resolved model ID, both-stage prompt/parser provenance, the full semantic artifact and hash, exact operations, semantic-verification status, target/import hashes, and metrics. Analyst prompt v5 uses SHA-256 `307102f58c9335591d3bae98587b7f95ebe3e14a66c9b4ce42678d5b72aac38b` with parser `meditate-analyst-parser-v6`. Drafter prompt v17 uses SHA-256 `f6ad4ef581a6b55baa11f7ecb76e204a2cc1774c60baf5e6f0b4637b0906f82f` with parser `meditate-parser-v33`. Verifier protocol version 3 invalidates older receipts under the detector-boundary change.
+Plans bind schema version, requested model, API-returned resolved model ID, both-stage prompt/parser provenance, the full semantic artifact and hash, exact operations, semantic-verification status, target/import hashes, and metrics. Analyst prompt v5 uses SHA-256 `307102f58c9335591d3bae98587b7f95ebe3e14a66c9b4ce42678d5b72aac38b` with parser `meditate-analyst-parser-v6`. Drafter prompt v18 uses SHA-256 `510c166f2f034acdc96990bab1d7f9cf6ee685d5aada166b24f17e61d9936fb1` with parser `meditate-parser-v34`. Verifier protocol version 3 invalidates older receipts under the detector-boundary change.
 
 Apply verifies immutable archives, current config/source/import hashes, the reversible or exact-hash approval class, and any present semantic receipt. It refuses symlinks, writes same-directory temporary files, preserves modes, fsyncs, atomically replaces, and rolls back earlier targets if a later write fails. Every apply receipt names `meditate restore RUN_ID`. Restore refuses later hand-edit drift unless forced; forced restore first archives the diverged bytes. Rollback restores instruction bytes; it cannot undo a downstream deployment, credential, hook, or scheduled action that consumed those bytes, so those consequential categories require attended approval.
 
@@ -148,21 +172,21 @@ Runtime credentials use only `ANTHROPIC_API_KEY` for planning and `OPENAI_API_KE
 ## Commands
 
 - `meditate init`: write commented TOML configuration.
-- `meditate inspect [--json]`: local inventory, imports, metrics, and overlap candidates; no model call or target mutation.
-- `meditate plan [planning flags]`: run/replay semantic analysis, optionally draft a bounded proposal, validate, archive, and report without target mutation.
+- `meditate inspect [--target FILE ...] [--output FILE] [--json]`: local inventory, imports, metrics, and overlap candidates; no model call or target mutation.
+- `meditate plan [planning flags] [--target FILE ...] [--output FILE]`: run/replay semantic analysis, optionally draft a bounded proposal, validate, archive, and report without target mutation.
 - `meditate verify RUN_ID --suite FILE --agent claude|codex [--model ID] [--repeats N]`: run and bind the planner-blind consumer suite.
 - `meditate decisions RUN_ID [--json]`: show one pending bounded authority question.
 - `meditate decide RUN_ID REQUEST_ID (--choice a|b|c | --custom TEXT)`: create a frozen-context successor plan.
 - `meditate apply RUN_ID (--reversible | --approve PLAN_SHA256 | --unattended)`: revalidate and atomically apply an eligible archived plan; `--unattended` remains a compatibility surface while new low-blast-radius execution uses `--reversible`.
 - `meditate restore RUN_ID [--force] [--recover]`: restore exact pre-images under drift rules.
-- `meditate run [planning flags] [--apply]`: inspect, plan, optionally verify, then apply a low-blast-radius reversible plan; known unresolved work exits with `action_required`, never successful `not_needed`.
+- `meditate run [planning flags] [--target FILE ...] [--output FILE] [--apply]`: inspect, plan, optionally verify, then apply a low-blast-radius reversible plan; known unresolved work exits with `action_required`, never successful `not_needed`.
 - `meditate cron [--check] [--schedule CRON] [--apply]`: print or validate a locked invocation; never edit crontab.
 - `meditate purge RUN_ID [--execute] [--force]`: preview or explicitly erase a named archive with replay-safe markers.
 
 ## Distribution
 
-The canonical public distribution for v0.4.0 is the GitHub Release wheel:
-https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl
+The canonical public distribution for v0.5.0 is the GitHub Release wheel:
+https://github.com/jmcentire/meditate/releases/download/v0.5.0/meditate_agent-0.5.0-py3-none-any.whl
 
 PyPI publication is not claimed. CI validates Ruff, strict mypy, pytest on supported Python versions, and an isolated wheel build but does not publish.
 

@@ -5,10 +5,10 @@
 [Design brief](docs/design-brief.md) ·
 [Changelog](CHANGELOG.md)
 
-Current package version: **0.4.0 alpha**.
+Current package version: **0.5.0 alpha**.
 
 Meditate's product goal is a locally operated behavioral-contract compiler and policy
-router for the directives Claude Code and OpenAI Codex load. Version 0.4 delivers two
+router for the directives Claude Code and OpenAI Codex load. Version 0.5 delivers two
 separate production boundaries: an evidence-grounded semantic Analyst that nominates
 possible defects, and a bounded directive compiler that can act only on locally admitted
 candidates. It reads current prose together with temporally ordered interactions and
@@ -18,6 +18,13 @@ candidates, and evidence-backed missing-rule hypotheses. A locally validated mis
 now a reversible introduction into an exact configured target, not a report that strands the
 finding. Its fixed point is stability, not shrinkage: a well-formed file is a successful,
 byte-identical no-op.
+
+Version 0.5 also makes compiler input explicit. `inspect`, `plan`, and `run`
+accept repeatable `--target FILE` arguments for arbitrary Markdown instruction files,
+including `CLAUDE.md`, `AGENTS.md`, scoped rules, and `SKILL.md`. Without `--output`,
+each selected file is maintained in place. With `--output FILE`, every input is
+read-only and the combined result is written only to that output. The output may also
+be one of the inputs; its original bytes are then the recoverable pre-image.
 
 > **Authority before confidence.** A fluent or high-confidence rewrite has no
 > authority of its own. Current instructions, explicit corrections, applicable
@@ -66,12 +73,12 @@ private XDG data/state directories, not this repository.
 
 ### GitHub Release wheel
 
-The canonical public distribution surface for v0.4.0 is the versioned wheel
+The canonical public distribution surface for v0.5.0 is the versioned wheel
 attached to its GitHub Release. After that release asset is published:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl
+.venv/bin/pip install https://github.com/jmcentire/meditate/releases/download/v0.5.0/meditate_agent-0.5.0-py3-none-any.whl
 .venv/bin/meditate init
 ```
 
@@ -91,7 +98,9 @@ The default config is `~/.config/meditate/config.toml`. It targets
 `~/.claude/CLAUDE.md`, reads Claude's prompt index and auto-memory, leaves full
 transcript bodies disabled, and enables Kindex when `kin` is available. Add
 `~/.codex/AGENTS.md` to `targets` and `codex` to `sources.agents` to include
-Codex. Every writable file must appear in the exact `targets` allowlist.
+Codex. Configured targets are the default writable allowlist. An explicit CLI
+`--target` list replaces that default for one `inspect`, `plan`, or `run` invocation;
+the exact ordered selection is hash-bound into the resulting run archive.
 Fresh semantic planning can use one Analyst call and one Drafter call, so the v0.3
 default is `llm.max_calls = 2`; new configs default aggregate input/output budgets to
 160,000/16,384 tokens across both. Existing explicit budgets remain unchanged and
@@ -116,6 +125,97 @@ be written through their import role. Recognized secret shapes in imported conte
 are redacted locally before provider submission, but pattern redaction is not
 comprehensive and is not a filesystem sandbox. Same-user filesystem compromise is
 outside Meditate's threat boundary.
+
+## Direct targets and compiled output
+
+`--target` selects ordered semantic input and the flag may appear more than once.
+Several no-output files are planned together, rendered back to their own source
+paths, and applied as one rollback-capable transaction. The model sees each
+directive's original source path, while local code remains the only authority that
+decides which paths may be written.
+
+```bash
+# Maintain one skill in place. A changed apply archives the exact original.
+meditate run --target ~/.claude/skills/review/SKILL.md --apply
+
+# Maintain several files independently in one run.
+meditate run \
+  --target ~/.claude/CLAUDE.md \
+  --target ~/.codex/AGENTS.md \
+  --apply
+
+# Compile two read-only sources into a separate project artifact.
+meditate run \
+  --target ~/work/CLAUDE.md \
+  --target ~/personal/CLAUDE.md \
+  --output ./AGENTS.md \
+  --apply
+
+# Compile AGENTS.md plus CLAUDE.md back into AGENTS.md.
+# AGENTS.md is both input and sole output, so its old bytes are archived.
+meditate run \
+  --target ./AGENTS.md \
+  --target ./CLAUDE.md \
+  --output ./AGENTS.md \
+  --apply
+```
+
+The selection is invocation-local; it does not rewrite `config.toml`. Later
+`apply`, `decide`, and `restore` commands reconstruct the ordered paths from the
+immutable run archive, so the flags are not repeated. Every input hash, order,
+mode, output pre-image, and writable path is rechecked before mutation; any drift
+aborts before the first write. Existing
+inputs that resolve to the same physical file, including hard-link aliases, are
+rejected.
+
+In output mode, all `--target` sources must exist. The output may be new or
+existing, but its parent directory must already exist. Existing output content is
+a backup pre-image, not semantic input, unless the output also appears as a
+`--target`. Only the output can change; every other source remains byte-identical.
+
+Output-as-input also has a terminating exact-representation rule. On a repeated
+invocation, a secondary document whose complete directive multiset—exact source
+bytes plus heading path—is already present in the output input is recorded as
+already represented and is not appended again. This prevents recursive growth
+without claiming that similar or partially matching prose is equivalent. Every
+selected input hash remains bound in the run.
+
+YAML frontmatter is a document envelope rather than a directive. When the output
+is also an input, that file supplies the envelope. Otherwise the first target
+does. Secondary envelopes are not merged. The run succeeds with an explicit
+inspection/plan warning that names every omitted envelope; they are never silently
+treated as active output metadata.
+Markdown bodies retain CLI order and each resulting directive retains its
+original source path.
+
+“Backup” means the private content-addressed run archive, not an adjacent `.bak`
+file. Every successful changed apply reports the archive, per-target pre-image
+hashes, and `meditate restore RUN_ID`. Archives remain recoverable until an
+explicit purge.
+
+### v0.5.0 live target/output receipts
+
+- `20260820T013809Z-a65bd797` maintained a disposable `SKILL.md` in place,
+  removed one locally confirmed exact duplicate, changed SHA-256 `d6fbdfbe...`
+  to `1a87ba79...`, and restored the exact original.
+- `20260820T013825Z-3ccd9834` compiled two read-only inputs into a distinct
+  `AGENTS.md`, replaced legacy output `8220090e...` with `d363b74e...`, left
+  both sources byte-identical, and restored the exact legacy output.
+- `20260820T013836Z-60c301c4` compiled `AGENTS.md` plus read-only `CLAUDE.md`
+  back into `AGENTS.md`, changing `11715558...` to `37d5953b...` while CLAUDE
+  stayed `ee0b1ef6...`, then restored the exact AGENTS pre-image. Repeat
+  `20260820T013850Z-874628d9` was a zero-write `stable_noop`; exact repeat
+  `20260820T013856Z-0c0593ca` was also byte-identical and made zero provider calls.
+
+All used `claude-sonnet-4-6`, Drafter prompt v18/parser v34. Their semantic
+verification was `not_run` or `not_applicable`: they qualify path authority,
+write isolation, convergence, archive, and restore—not downstream behavioral
+equivalence.
+
+Explicit target/output paths are operator authority. Meditate refuses symlinks
+and non-regular files and the model cannot invent another destination, but the CLI
+is not a filesystem sandbox: an operator can select any path their OS account may
+read or write. Same-user compromise remains outside the threat boundary.
 
 Anthropic planning calls use the standard `ANTHROPIC_API_KEY` environment
 variable. Clean-room Codex consumer verification requires the standard
@@ -497,7 +597,9 @@ The five dispositions are:
 
 - **keep**: copy the current directive bytes unchanged;
 - **replace**: locally render a typed directive record at the same location;
-- **remove**: delete a directive only with strong exact evidence;
+- **remove**: delete a directive only with strong exact evidence. One narrow source-only
+  ground exists: local preflight confirmed an exact-duplicate cluster and an identical peer
+  remains kept byte-for-byte;
 - **relocate**: move specific prose to an exact configured target, recording
   either a `contextual` or `organization` basis;
 - **escalate**: preserve source prose byte-for-byte and report a candidate for a

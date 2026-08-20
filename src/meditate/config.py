@@ -12,6 +12,7 @@ from .util import (
     SCHEMA_VERSION,
     MeditateError,
     atomic_write,
+    canonical_json_bytes,
     display_path,
     ensure_not_foreign_root,
     fail,
@@ -110,14 +111,47 @@ class Config:
     apply: ApplyConfig
     retention: RetentionConfig
     raw_bytes: bytes
+    runtime_targets: tuple[Path, ...] | None = None
+    runtime_output: Path | None = None
 
     @property
     def hash(self) -> str:
         return sha256_bytes(self.raw_bytes)
 
     @property
+    def input_targets(self) -> tuple[Path, ...]:
+        """Ordered semantic inputs selected for this invocation."""
+
+        return self.runtime_targets if self.runtime_targets is not None else self.targets
+
+    @property
+    def writable_targets(self) -> tuple[Path, ...]:
+        """Exact paths this invocation may replace."""
+
+        return (self.runtime_output,) if self.runtime_output is not None else self.input_targets
+
+    @property
     def allowed_targets(self) -> set[Path]:
-        return {target.expanduser().absolute() for target in self.targets}
+        return {target.expanduser().absolute() for target in self.writable_targets}
+
+    @property
+    def target_selection(self) -> dict[str, Any]:
+        """Canonical, archive-safe target authority for this invocation."""
+
+        inputs = [str(path.expanduser().absolute()) for path in self.input_targets]
+        writable = [str(path.expanduser().absolute()) for path in self.writable_targets]
+        core: dict[str, Any] = {
+            "source": "cli" if self.runtime_targets is not None else "config",
+            "mode": "output" if self.runtime_output is not None else "in_place",
+            "inputs": inputs,
+            "writable_targets": writable,
+            "output": (
+                str(self.runtime_output.expanduser().absolute())
+                if self.runtime_output is not None
+                else None
+            ),
+        }
+        return {**core, "sha256": sha256_bytes(canonical_json_bytes(core))}
 
 
 def default_config_path() -> Path:
@@ -470,6 +504,95 @@ def with_llm_overrides(
         ),
     )
     return replace(config, llm=llm)
+
+
+def _runtime_path(value: Path, field: str) -> Path:
+    try:
+        selected = value.expanduser().absolute()
+    except (OSError, RuntimeError, ValueError) as exc:
+        fail("invalid_target_override", f"{field} is not a usable path: {exc}")
+    if not str(selected).strip() or "\x00" in str(selected):
+        fail("invalid_target_override", f"{field} must be a non-empty path")
+    return selected
+
+
+def with_target_overrides(
+    config: Config,
+    *,
+    targets: tuple[Path, ...] | None = None,
+    output: Path | None = None,
+) -> Config:
+    """Apply one explicit CLI input/output selection without mutating TOML state."""
+
+    if targets is None:
+        if output is not None:
+            fail("output_requires_targets", "--output requires at least one explicit --target")
+        return config
+    if not targets:
+        fail("invalid_target_override", "At least one --target is required")
+    selected = tuple(
+        _runtime_path(target, f"--target[{index}]") for index, target in enumerate(targets)
+    )
+    if len(set(selected)) != len(selected):
+        fail("duplicate_target", "--target contains a duplicate path")
+    selected_output = _runtime_path(output, "--output") if output is not None else None
+    return replace(config, runtime_targets=selected, runtime_output=selected_output)
+
+
+def with_archived_target_selection(config: Config, value: Any) -> Config:
+    """Rebuild an invocation's target authority from a hash-bound run artifact."""
+
+    expected_fields = {
+        "source",
+        "mode",
+        "inputs",
+        "writable_targets",
+        "output",
+        "sha256",
+    }
+    if not isinstance(value, dict) or set(value) != expected_fields:
+        fail("archive_corrupt", "Run target selection is malformed")
+    core = {key: value[key] for key in expected_fields if key != "sha256"}
+    if value.get("sha256") != sha256_bytes(canonical_json_bytes(core)):
+        fail("archive_corrupt", "Run target selection hash is invalid")
+    inputs = value.get("inputs")
+    writable = value.get("writable_targets")
+    source = value.get("source")
+    mode = value.get("mode")
+    output = value.get("output")
+    if (
+        source not in {"config", "cli"}
+        or mode not in {"in_place", "output"}
+        or not isinstance(inputs, list)
+        or not inputs
+        or not all(isinstance(item, str) and Path(item).is_absolute() for item in inputs)
+        or len(set(inputs)) != len(inputs)
+        or not isinstance(writable, list)
+        or not writable
+        or not all(isinstance(item, str) and Path(item).is_absolute() for item in writable)
+        or len(set(writable)) != len(writable)
+        or (output is not None and (not isinstance(output, str) or not Path(output).is_absolute()))
+    ):
+        fail("archive_corrupt", "Run target selection contains invalid paths or modes")
+    if mode == "in_place":
+        if output is not None or writable != inputs:
+            fail("archive_corrupt", "In-place target selection is inconsistent")
+    elif output is None or writable != [output]:
+        fail("archive_corrupt", "Output target selection is inconsistent")
+
+    base_config = replace(config, runtime_targets=None, runtime_output=None)
+    if source == "config":
+        if value != base_config.target_selection:
+            fail("config_drift", "Configured targets changed after plan generation")
+        return base_config
+    effective = with_target_overrides(
+        base_config,
+        targets=tuple(Path(item) for item in inputs),
+        output=Path(output) if isinstance(output, str) else None,
+    )
+    if effective.target_selection != value:
+        fail("archive_corrupt", "Run target selection cannot be reconstructed")
+    return effective
 
 
 def resolve_codex_project_doc_max_bytes(config: Config) -> tuple[int, str]:

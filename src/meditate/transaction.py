@@ -20,7 +20,7 @@ from .analyst import (
     ANALYST_PROMPT_VERSION,
     analysis_summary,
 )
-from .config import Config
+from .config import Config, with_archived_target_selection
 from .imports import build_import_graph
 from .plan import (
     LEGACY_SEMANTIC_VERIFICATION,
@@ -118,6 +118,8 @@ def _verified_artifacts(
         "decision_lineage",
         "blocked_reasons",
         "metrics",
+        "target_selection",
+        "input_documents",
         "import_graph_before",
         "import_graph_after",
     ):
@@ -413,6 +415,30 @@ def _snapshot(path: Path) -> tuple[bool, str, int, tuple[int, int, int]]:
         os.close(descriptor)
 
 
+def _verify_input_documents(config: Config, manifest: dict[str, Any]) -> None:
+    """Require every ordered semantic input to match its plan-time snapshot."""
+
+    records = manifest.get("input_documents")
+    if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
+        fail("archive_corrupt", "Manifest input documents are invalid")
+    expected_paths = [str(path.expanduser().absolute()) for path in config.input_targets]
+    observed_paths = [item.get("path") for item in records]
+    if observed_paths != expected_paths:
+        fail("archive_corrupt", "Manifest input order differs from target selection")
+    for item in records:
+        raw_path = item.get("path")
+        if not isinstance(raw_path, str) or "\x00" in raw_path or not Path(raw_path).is_absolute():
+            fail("archive_corrupt", "Manifest input path is not an absolute safe path")
+        path = Path(raw_path)
+        exists, digest, mode, _fingerprint = _snapshot(path)
+        if (
+            exists != bool(item.get("existed"))
+            or digest != item.get("sha256")
+            or mode != item.get("mode")
+        ):
+            fail("source_drift", f"Semantic input changed after planning: {path}")
+
+
 def _verify_parent(path: Path) -> Path:
     parent = path.parent.absolute()
     try:
@@ -599,6 +625,7 @@ def apply_run(
             )
         if plan.get("config_sha256") != config.hash or manifest.get("config_sha256") != config.hash:
             fail("config_drift", "Configuration changed after plan generation; generate a new plan")
+        effective_config = with_archived_target_selection(config, plan.get("target_selection"))
         blocked = plan.get("blocked_reasons", [])
         if "decision_required" in blocked:
             fail(
@@ -654,15 +681,25 @@ def apply_run(
         expected_before_graph = plan.get("import_graph_before")
         if not isinstance(expected_before_graph, dict):
             fail("import_graph_drift", "Plan does not bind a Claude import graph")
-        observed_before_graph = build_import_graph(config).public_dict()
+        observed_before_graph = build_import_graph(effective_config).public_dict()
         if observed_before_graph != expected_before_graph:
             fail(
                 "import_graph_drift",
                 "Claude import graph changed after planning; generate a new plan",
             )
 
+        _verify_input_documents(effective_config, manifest)
+        expected_writable = [
+            str(path.expanduser().absolute()) for path in effective_config.writable_targets
+        ]
+        if (
+            not isinstance(targets_raw, list)
+            or [item.get("path") for item in targets_raw if isinstance(item, dict)]
+            != expected_writable
+        ):
+            fail("archive_corrupt", "Manifest targets differ from target-selection authority")
         _free_space_preflight(config, targets, run_dir)
-        allowed = config.allowed_targets
+        allowed = effective_config.allowed_targets
         prepared: list[tuple[dict[str, Any], Path, bytes, bytes]] = []
         for target in targets:
             path = resolve_allowlisted(
@@ -705,7 +742,9 @@ def apply_run(
             expected_after_graph = plan.get("import_graph_after")
             if not isinstance(expected_after_graph, dict):
                 fail("import_graph_drift", "Plan does not bind a post-apply import graph")
-            observed_after_graph = build_import_graph(config).public_dict()
+            observed_after_graph = build_import_graph(
+                effective_config, include_writable_roots=True
+            ).public_dict()
             if observed_after_graph != expected_after_graph:
                 fail(
                     "import_graph_drift",
@@ -800,6 +839,15 @@ def apply_run(
             "metrics": plan.get("metrics"),
             "targets": [
                 {"path": target["logical_path"], "post_sha256": target["post_sha256"]}
+                for target in targets
+            ],
+            "backup_archive": str(run_dir),
+            "backups": [
+                {
+                    "path": target["logical_path"],
+                    "pre_sha256": target["pre_sha256"],
+                    "blob": str(run_dir / str(target["pre_blob"])),
+                }
                 for target in targets
             ],
             "restore_command": f"meditate restore {run_id}",

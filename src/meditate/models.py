@@ -80,6 +80,7 @@ class Directive:
     raw: str
     normalized: str
     protected: bool = False
+    source_path: str = ""
 
     def packet_dict(self) -> dict[str, Any]:
         return {
@@ -89,7 +90,25 @@ class Directive:
             "kind": self.kind,
             "text": self.raw,
             "protected": self.protected,
+            "source_path": self.source_path or self.target,
         }
+
+
+@dataclass(frozen=True)
+class InputDocument:
+    """One immutable semantic input captured for target-selection drift checks."""
+
+    path: Path
+    logical_path: str
+    content: str
+    content_bytes: bytes
+    sha256: str
+    mode: int
+    existed: bool
+    device: int = 0
+    inode: int = 0
+    frontmatter: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -103,6 +122,19 @@ class TargetDocument:
     existed: bool
     directives: tuple[Directive, ...]
     scope_paths: tuple[str, ...] = ()
+    preimage_bytes: bytes | None = None
+    preimage_sha256: str = ""
+    frontmatter_source: str = ""
+    secondary_frontmatter_sources: tuple[str, ...] = ()
+    represented_input_sources: tuple[str, ...] = ()
+
+    @property
+    def archived_preimage_bytes(self) -> bytes:
+        return self.content_bytes if self.preimage_bytes is None else self.preimage_bytes
+
+    @property
+    def archived_preimage_sha256(self) -> str:
+        return self.preimage_sha256 or self.sha256
 
 
 @dataclass(frozen=True)
@@ -196,6 +228,7 @@ class InspectionResult:
     selected_events: tuple[EvidenceEvent, ...]
     stats: SourceStats
     import_graph: ImportGraph
+    input_documents: tuple[InputDocument, ...] = ()
     overlaps: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
     degraded: tuple[str, ...] = ()

@@ -25,8 +25,8 @@ answer. `meditate decide` rejects a recognized high-confidence secret shape in a
 custom response before submission. Other selected-option
 and custom text is still user-derived content; it is not anonymous or risk-free.
 
-The Analyst request includes its system prompt and schema, configured target path
-labels and hashes, the complete sanitized configured directive set, bounded imported
+The Analyst request includes its system prompt and schema, configured or explicitly
+selected target path labels and hashes, the complete sanitized selected directive set, bounded imported
 immutable context, and selected temporally ordered interaction, auto-memory, and
 Kindex evidence with metadata. When Kindex is enabled, selected node content is
 therefore provider-bound user data even though Kindex itself is read-only. The
@@ -55,18 +55,30 @@ directory, ignores user config and rules, and requires `OPENAI_API_KEY`; this ke
 global `AGENTS.md`, memories, and configuration out of the control condition. The
 frozen suite and verification receipt are private local artifacts.
 
-Configured instruction files, interaction histories, auto-memory, and Kindex may
-be read as evidence. Histories, memory, and Kindex are read-only; Meditate writes
-only exact instruction targets declared in its configuration. Model output is
-untrusted and cannot choose filesystem paths or mint durable identifiers.
+Configured instruction files, explicit repeatable `--target` files, interaction
+histories, auto-memory, and Kindex may be read as evidence. An explicit target may
+be any process-readable path selected by the operator. Histories, memory, and
+Kindex are read-only. Without `--output`, each selected target may be written in
+place. With `--output`, every input is read-only and only the output may be
+written; the output may also be one input. Model output is untrusted and cannot
+choose filesystem paths or mint durable identifiers.
+
+In output mode, every selected input's sanitized directives and original source
+path may be transmitted to the model. Existing output content is not transmitted
+as semantic input unless the output also appears in `--target`. YAML frontmatter
+from the output-as-input or first input is the selected document envelope;
+secondary envelopes are not merged and are reported locally.
 
 A locally admitted low-blast-radius plan may be applied with `--reversible` or by
 an explicit `run --apply`. Before writing, Meditate preserves and hash-verifies the
-exact pre-image; the receipt states the changed targets and `meditate restore RUN_ID`.
+exact physical pre-image in a private content-addressed archive; the receipt states
+the archive, changed targets, pre-image hashes, and `meditate restore RUN_ID`.
 Consequential credential, permission, hook/settings, destructive, force, or automatic
 remote/release/deployment changes require exact attended approval. Restore recovers
 instruction-file bytes, but cannot undo a downstream action performed by another process
-after it consumed the changed instructions.
+after it consumed the changed instructions. Restore removes an output that did not
+exist before the run. Recovery material remains until explicit purge; Meditate does
+not create adjacent `.bak` files.
 
 `analysis.json`, `plan.json`, `manifest.json`, `evidence.json`, semantic cache
 entries, frozen `verification-suite.json`, `verification.json`, and run-specific JSON/Markdown
@@ -91,10 +103,15 @@ The documentation site at <https://jmcentire.github.io/meditate/> is static. It
 sets no cookies and loads no third-party analytics, scripts, fonts, or images.
 GitHub Pages may process ordinary request metadata under GitHub's own terms.
 
+Explicit CLI target and output paths are operator-granted filesystem authority,
+not a sandbox boundary. Meditate rejects symlinks, non-regular files, and duplicate
+physical input aliases, but an operator can select any path their OS account may
+access. Same-user filesystem compromise is outside the threat boundary.
+
 The operator controls evidence sources, model/provider configuration, retention,
-writable targets, and whether `run --apply` or a direct apply command is invoked. Operators should
+configured or invocation-local writable targets, and whether `run --apply` or a direct apply command is invoked. Operators should
 review their model provider's data-handling terms before enabling model calls or
 opt-in transcript bodies.
 
 See the [full privacy page](https://jmcentire.github.io/meditate/privacy.html) for
-details. Last updated August 19, 2026; applies to Meditate 0.4.x.
+details. Last updated August 19, 2026; applies to Meditate 0.5.x.

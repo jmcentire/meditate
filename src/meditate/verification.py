@@ -683,13 +683,17 @@ def _instruction_bundle(run_dir: Path, manifest: dict[str, Any], *, post: bool) 
         fail("archive_corrupt", "Verifier target manifest is invalid")
     sections: list[str] = []
     for target in targets:
-        blob_field = "post_blob" if post else "pre_blob"
+        blob_field = "post_blob" if post else "semantic_blob"
+        if not post and blob_field not in target:
+            blob_field = "pre_blob"
         blob_path = run_dir / str(target.get(blob_field, ""))
         try:
             data = blob_path.read_bytes()
         except OSError:
             fail("archive_corrupt", f"Verifier cannot read {blob_field}")
-        expected = target.get("post_sha256" if post else "pre_sha256")
+        expected = target.get(
+            "post_sha256" if post else "semantic_sha256", target.get("pre_sha256")
+        )
         if not isinstance(expected, str) or sha256_bytes(data) != expected:
             fail("archive_corrupt", f"Verifier {blob_field} hash mismatch")
         try:
@@ -887,7 +891,7 @@ def verify_run(
         target_bindings = [
             {
                 "logical_path": str(item["logical_path"]),
-                "pre_sha256": str(item["pre_sha256"]),
+                "pre_sha256": str(item.get("semantic_sha256", item["pre_sha256"])),
                 "post_sha256": str(item["post_sha256"]),
             }
             for item in manifest["targets"]
@@ -1094,7 +1098,7 @@ def load_passed_verification(run_dir: Path, plan: dict[str, Any]) -> dict[str, A
     expected_targets = [
         {
             "logical_path": str(item["logical_path"]),
-            "pre_sha256": str(item["pre_sha256"]),
+            "pre_sha256": str(item.get("semantic_sha256", item["pre_sha256"])),
             "post_sha256": str(item["post_sha256"]),
         }
         for item in plan.get("targets", [])
