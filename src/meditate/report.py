@@ -45,7 +45,7 @@ def _safe_markdown(value: str) -> str:
 
 
 def _safe_code(value: str) -> str:
-    return _plain_text(value)
+    return _plain_text(value).replace("`", "&#96;")
 
 
 def _indented(value: str) -> str:
@@ -97,9 +97,34 @@ def write_inspection_report(config: Config, result: InspectionResult) -> tuple[s
     json_path = root / f"{report_id}.json"
     md_path = root / f"{report_id}.md"
     atomic_write_json(json_path, payload)
+    overlap_paths = [
+        warning.removeprefix("output_overwrites_input:")
+        for warning in result.warnings
+        if warning.startswith("output_overwrites_input:")
+    ]
+    secondary_envelopes = [
+        warning.removeprefix("secondary_frontmatter_not_emitted:")
+        for warning in result.warnings
+        if warning.startswith("secondary_frontmatter_not_emitted:")
+    ]
+    represented_inputs = [
+        warning.removeprefix("input_already_represented_in_output:")
+        for warning in result.warnings
+        if warning.startswith("input_already_represented_in_output:")
+    ]
+    input_write_line = (
+        "- Input/write model: input files supply directives; writable targets are the only "
+        "files Meditate may replace."
+    )
+    selection_lifetime = (
+        "this inspect command only" if config.runtime_targets is not None else "configured in TOML"
+    )
+    secondary_display = ", ".join(secondary_envelopes) if secondary_envelopes else "none"
+    represented_display = ", ".join(represented_inputs) if represented_inputs else "none"
     markdown = f"""# Meditate inspection
 
 - Report: `{report_id}`
+- Semantic inputs: {len(result.input_documents)}
 - Targets: {len(result.targets)}
 - Directives: {sum(len(target.directives) for target in result.targets)}
 - Evidence records: {len(result.events)} total; {len(result.selected_events)} selected
@@ -109,6 +134,12 @@ def write_inspection_report(config: Config, result: InspectionResult) -> tuple[s
 - Claude import graph: {len(result.import_graph.documents)} nodes /
   {len(result.import_graph.edges)} edges
 - Claude import graph digest: `{result.import_graph.digest}`
+- Warnings: {", ".join(result.warnings) if result.warnings else "none"}
+{input_write_line}
+- CLI selection lifetime: {selection_lifetime}
+- Output also supplied as input: {", ".join(overlap_paths) if overlap_paths else "no"}
+- Secondary YAML frontmatter omitted from combined output: {secondary_display}
+- Secondary inputs already represented exactly in the output input: {represented_display}
 - Degraded conditions: {", ".join(result.degraded) if result.degraded else "none"}
 
 This local-only report contains counts, hashes, and detector IDs. It contains no
@@ -122,6 +153,8 @@ raw interaction text. Run `meditate plan` to create an evidence-backed proposal.
             "event": "inspection_complete",
             "report_id": report_id,
             "targets": len(result.targets),
+            "inputs": len(result.input_documents),
+            "target_selection": config.target_selection,
             "directives": sum(len(target.directives) for target in result.targets),
             "events": len(result.events),
             "selected": len(result.selected_events),
@@ -141,10 +174,38 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
     run_dir = config.data_root / "runs" / plan.run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     manifest_targets = manifest.get("targets", [])
+    input_documents = manifest.get("input_documents", [])
+    target_selection = manifest.get("target_selection", {})
+    input_paths = [
+        str(item.get("logical_path", item.get("path", "")))
+        for item in input_documents
+        if isinstance(item, dict)
+    ]
+    frontmatter_sources = [
+        str(item.get("frontmatter_source"))
+        for item in manifest_targets
+        if isinstance(item, dict) and item.get("frontmatter_source")
+    ]
+    secondary_frontmatter_sources = [
+        str(source)
+        for item in manifest_targets
+        if isinstance(item, dict)
+        for source in item.get("secondary_frontmatter_sources", [])
+        if isinstance(source, str)
+    ]
     changed_targets = sum(
         1 for item in manifest_targets if isinstance(item, dict) and item.get("changed", True)
     )
     semantic_analysis_public = analysis_summary(plan.semantic_analysis)
+    output_path = target_selection.get("output") if isinstance(target_selection, dict) else None
+    output_overlaps_input = isinstance(output_path, str) and output_path in {
+        str(item.get("path")) for item in input_documents if isinstance(item, dict)
+    }
+    output_overlap_display = (
+        f"yes — `{_safe_code(output_path)}` is archived before replacement"
+        if output_overlaps_input and isinstance(output_path, str)
+        else "no"
+    )
     decision_response_argv: dict[str, list[str]] = {}
     if plan.decision_request:
         response_base = [
@@ -209,6 +270,8 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         "post_lines": plan.metrics.get("post_lines", 0),
         "line_delta": plan.metrics.get("line_delta", 0),
         "metrics": plan.metrics,
+        "target_selection": target_selection,
+        "input_documents": input_documents,
         "targets": manifest_targets,
         "usage": plan.usage.to_dict(),
         "summary": plan.raw_plan.get("summary", ""),
@@ -254,6 +317,22 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
         f"- Resolved model ID: `{plan.model_id}`",
         f"- Prompt version: `{plan.prompt_version}`",
         f"- Prompt SHA-256: `{plan.prompt_sha256}`",
+        (
+            "- Target mode: `"
+            + _safe_code(str(target_selection.get("mode", "unknown")))
+            + "`; semantic inputs "
+            + str(len(input_documents) if isinstance(input_documents, list) else 0)
+            + "; writable targets "
+            + str(len(manifest_targets) if isinstance(manifest_targets, list) else 0)
+        ),
+        "- Input/write model: input files supply directives; writable targets are the only "
+        "files Meditate may replace.",
+        "- Output also supplied as input: " + output_overlap_display,
+        "- Input order: " + (", ".join(f"`{_safe_code(path)}`" for path in input_paths) or "none"),
+        "- Frontmatter source: "
+        + (", ".join(f"`{_safe_code(path)}`" for path in frontmatter_sources) or "none"),
+        "- Secondary frontmatter not emitted: "
+        + (", ".join(f"`{_safe_code(path)}`" for path in secondary_frontmatter_sources) or "none"),
         (
             "- Consolidation preflight: "
             f"`{_safe_code(str(plan.consolidation_preflight.get('status', 'unknown')))}`; "
@@ -315,6 +394,11 @@ def _write_plan_report_unlocked(config: Config, plan: ValidatedPlan) -> tuple[Pa
             f"- Restore after apply: `meditate restore {plan.run_id}`"
             if changed_targets
             else "- Restore after apply: none"
+        ),
+        (
+            f"- Exact pre-image archive: `{_safe_code(str(run_dir))}`"
+            if changed_targets
+            else "- Exact pre-image archive: not needed"
         ),
         (
             f"- Tokens: {plan.usage.actual_input_tokens} input / "

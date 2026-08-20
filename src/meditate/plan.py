@@ -40,7 +40,12 @@ from .models import (
 )
 from .provider import Provider, create_provider
 from .redact import sanitize_text, surviving_high_confidence
-from .segment import is_claude_rules_target, load_targets, normalize_directive, segment_markdown
+from .segment import (
+    is_claude_rules_target,
+    load_target_set,
+    normalize_directive,
+    segment_markdown,
+)
 from .sources import collect_events
 from .util import (
     SCHEMA_VERSION,
@@ -48,6 +53,7 @@ from .util import (
     atomic_write,
     atomic_write_json,
     canonical_json_bytes,
+    display_path,
     ensure_private_dir,
     fail,
     new_run_id,
@@ -56,8 +62,8 @@ from .util import (
 )
 from .verification import VERIFICATION_METHOD
 
-PARSER_VERSION = "meditate-parser-v33"
-PLAN_PROMPT_VERSION = "17"
+PARSER_VERSION = "meditate-parser-v34"
+PLAN_PROMPT_VERSION = "18"
 TOKEN_ESTIMATOR = "utf8_bytes_upper_bound_v1"
 MAX_DECISION_DEPTH = 3
 MAX_DECISION_SUBJECT_CHARS = 400
@@ -638,7 +644,7 @@ TASK:
 - Preserve older evidence as lineage. Prefer newer evidence only after authority and scope.
 - Current instruction directives are authoritative baseline state. Do not change one merely
   because a rewrite sounds cleaner or shorter. A change needs a named defect ground, exact
-  evidence under the narrow source-only exception below, and a reason explaining how the defect
+  evidence under the narrow source-only exceptions below, and a reason explaining how the defect
   is resolved. A removal must be grounded in a specific superseding directive ID, an explicitly
   resolved contradiction, provably dead scope, or user confirmation. Reducing count is not a
   ground.
@@ -719,7 +725,8 @@ OUTPUT CONTRACT:
 - `keep` means Meditate copies the original bytes. Never return text for kept directives.
 - The five total dispositions are `keep`, `replace`, `remove`, `relocate`, and `escalate`.
   `replace` may consolidate several source IDs into one replacement. `remove` needs especially
-  strong evidence. `relocate` may write only to an exact target listed in `allowed_targets`.
+  strong evidence except when it removes confirmed exact-duplicate members while preserving an
+  identical peer. `relocate` may write only to an exact target listed in `allowed_targets`.
 - Set `destination_target` on every change, including `remove` and `escalate`, by copying one
   literal value byte-for-byte from `allowed_targets`. Treat target strings as opaque: never expand
   `~`, normalize separators or path segments, absolutize, or invent a spelling. For `replace`,
@@ -754,9 +761,11 @@ OUTPUT CONTRACT:
   ground a change. New-rule suggestions do not return evidence IDs; their evidence is inherited
   from the cited nomination.
 - For a `replace` that consolidates two or more directives inside one local candidate,
-  the source directives are sufficient proposal evidence and `evidence` may be empty. This narrow
-  source-only allowance does not apply to single-directive rewrites, remove, relocate, escalate,
-  or a decision request. Preserve every source trigger, command, scope boundary, exception, and
+  the source directives are sufficient proposal evidence and `evidence` may be empty. A `remove`
+  may also omit evidence only for members of one locally confirmed `exact_duplicate` candidate
+  when at least one identical candidate peer is kept byte-for-byte. These narrow source-only
+  allowances do not apply to single-directive rewrites, other removals, relocate, escalate, or a
+  decision request. Preserve every source trigger, command, scope boundary, exception, and
   observable outcome; an independent owner suite, not your own claim, decides whether it survived.
 - Set minimum_apply_mode to attended for every model-authored change. Meditate independently
   classifies a bounded, consequence-reversible replace or introduction as eligible for explicit
@@ -775,10 +784,33 @@ OUTPUT CONTRACT:
 
 
 def inspect_state(config: Config) -> InspectionResult:
-    targets = load_targets(config)
+    targets, input_documents = load_target_set(config)
     import_graph = build_import_graph(config)
     events, stats, warnings = collect_events(config)
-    return build_inspection(targets, import_graph, events, stats, warnings, config)
+    frontmatter_warnings = tuple(
+        f"secondary_frontmatter_not_emitted:{path}"
+        for target in targets
+        for path in target.secondary_frontmatter_sources
+    )
+    represented_warnings = tuple(
+        f"input_already_represented_in_output:{path}"
+        for target in targets
+        for path in target.represented_input_sources
+    )
+    selection_warnings: tuple[str, ...] = ()
+    if config.runtime_targets is not None:
+        selection_warnings += ("cli_target_selection_is_ephemeral",)
+    if config.runtime_output is not None and config.runtime_output in config.input_targets:
+        selection_warnings += (f"output_overwrites_input:{display_path(config.runtime_output)}",)
+    result = build_inspection(
+        targets,
+        import_graph,
+        events,
+        stats,
+        (*warnings, *frontmatter_warnings, *represented_warnings, *selection_warnings),
+        config,
+    )
+    return replace(result, input_documents=input_documents)
 
 
 def inspection_dict(result: InspectionResult, config: Config) -> dict[str, Any]:
@@ -786,15 +818,33 @@ def inspection_dict(result: InspectionResult, config: Config) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "config_sha256": config.hash,
+        "target_selection": config.target_selection,
+        "inputs": [
+            {
+                "path": item.logical_path,
+                "sha256": item.sha256,
+                "bytes": len(item.content_bytes),
+                "lines": len(item.content.splitlines()),
+                "mode": item.mode,
+                "existed": item.existed,
+                "frontmatter": bool(item.frontmatter),
+            }
+            for item in result.input_documents
+        ],
         "targets": [
             {
                 "path": target.logical_path,
                 "sha256": target.sha256,
+                "semantic_sha256": target.sha256,
+                "pre_sha256": target.archived_preimage_sha256,
                 "bytes": len(target.content_bytes),
                 "lines": len(target.content.splitlines()),
                 "directives": len(target.directives),
                 "existed": target.existed,
                 "scope_paths": list(target.scope_paths),
+                "frontmatter_source": target.frontmatter_source or None,
+                "secondary_frontmatter_sources": list(target.secondary_frontmatter_sources),
+                "represented_input_sources": list(target.represented_input_sources),
             }
             for target in result.targets
         ],
@@ -1028,6 +1078,18 @@ def _packet(
                 and item.get("admission") == "suggestion_candidate"
             ),
             "allowed_targets": [target.logical_path for target in inspection.targets],
+            "target_selection": deepcopy(config.target_selection),
+            "input_documents": [
+                {
+                    "path": item.logical_path,
+                    "sha256": item.sha256,
+                    "bytes": len(item.content_bytes),
+                    "mode": item.mode,
+                    "existed": item.existed,
+                    "frontmatter": bool(item.frontmatter),
+                }
+                for item in inspection.input_documents
+            ],
             "targets": target_data,
             "consolidation_preflight": preflight,
             "consolidation_candidates": [item.to_dict() for item in chosen_candidates],
@@ -2016,9 +2078,9 @@ def _validate_and_render(
             )
 
         citations = change.get("evidence_ids")
+        source_set = set(source_ids)
         semantic_candidate_evidence: list[str] = []
         if enforce_candidate_boundary and isinstance(citations, list):
-            source_set = set(source_ids)
             for cluster in candidate_clusters or ():
                 if not isinstance(cluster, dict):
                     continue
@@ -2060,7 +2122,31 @@ def _validate_and_render(
             and len(source_ids) >= 2
             and citations == []
         )
-        if not isinstance(citations, list) or (not citations and not source_only_consolidation):
+        source_only_duplicate_removal = False
+        if enforce_candidate_boundary and action == "remove" and citations == []:
+            for cluster in candidate_clusters or ():
+                if not isinstance(cluster, dict):
+                    continue
+                cluster_sources = cluster.get("source_ids")
+                reason_codes = cluster.get("reason_codes")
+                if not (
+                    isinstance(cluster_sources, list)
+                    and cluster_sources
+                    and all(isinstance(item, str) for item in cluster_sources)
+                    and isinstance(reason_codes, list)
+                    and all(isinstance(item, str) for item in reason_codes)
+                ):
+                    continue
+                cluster_source_set = set(cluster_sources)
+                if (
+                    "exact_duplicate" in reason_codes
+                    and source_set.issubset(cluster_source_set)
+                    and bool((cluster_source_set - source_set) & set(keep))
+                ):
+                    source_only_duplicate_removal = True
+                    break
+        source_only_resolution = source_only_consolidation or source_only_duplicate_removal
+        if not isinstance(citations, list) or (not citations and not source_only_resolution):
             fail("missing_evidence", f"Change {index} needs evidence")
         normalized_citations: list[dict[str, str]] = []
         cited_event_ids: set[str] = set()
@@ -2265,6 +2351,7 @@ def _validate_and_render(
                 "relocation_basis": relocation_basis,
                 "candidate_only": action == "escalate",
                 "source_only_consolidation": source_only_consolidation,
+                "source_only_duplicate_removal": source_only_duplicate_removal,
                 "lineage_depth": lineage_depth,
                 "defect_classes": defect_classes,
             }
@@ -2511,8 +2598,13 @@ def _plan_metrics(
 
     per_target: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
+    coverage = (
+        "cli_selected_targets_only"
+        if config.runtime_targets is not None
+        else "configured_targets_only"
+    )
     totals: dict[str, Any] = {
-        "coverage": "configured_targets_only",
+        "coverage": coverage,
         "pre_directives": 0,
         "post_directives": 0,
         "changed_directives": 0,
@@ -2593,7 +2685,7 @@ def _plan_metrics(
     totals["guidance_warnings"] = warnings
     totals["codex_instruction_budget"] = {
         "status": "within_budget",
-        "coverage": "configured_targets_only",
+        "coverage": coverage,
         "configured_target_count": codex_target_count,
         "post_bytes": codex_post_bytes,
         "project_doc_max_bytes": codex_limit,
@@ -2714,12 +2806,14 @@ def inspection_from_frozen_packet(
     ):
         fail("decision_context_drift", "Parent evidence packet has invalid degraded state")
     frozen_events = tuple(events)
+    targets, input_documents = load_target_set(config)
     return InspectionResult(
-        targets=load_targets(config),
+        targets=targets,
         events=frozen_events,
         selected_events=frozen_events,
         stats=stats,
         import_graph=build_import_graph(config),
+        input_documents=input_documents,
         overlaps=tuple(overlaps_raw),
         degraded=tuple(degraded_raw),
     )
@@ -2745,6 +2839,9 @@ def create_plan(
     _validate_run_root_path(config)
     enforce_candidate_boundary = provider is None or analyst_provider is not None
     result = inspection or inspect_state(config)
+    if not result.input_documents:
+        _loaded_targets, loaded_inputs = load_target_set(config)
+        result = replace(result, input_documents=loaded_inputs)
     planning_result = result
     semantic_analysis: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -2978,16 +3075,38 @@ def create_plan(
             "decision_context_drift",
             "The provider resolved a different model ID than the one that asked the question",
         )
-    observed_targets = load_targets(config)
+    observed_targets, observed_inputs = load_target_set(config)
     expected_target_state = [
-        (target.logical_path, target.sha256, target.existed, target.mode)
+        (
+            target.logical_path,
+            target.sha256,
+            target.archived_preimage_sha256,
+            target.existed,
+            target.mode,
+        )
         for target in planning_result.targets
     ]
     observed_target_state = [
-        (target.logical_path, target.sha256, target.existed, target.mode)
+        (
+            target.logical_path,
+            target.sha256,
+            target.archived_preimage_sha256,
+            target.existed,
+            target.mode,
+        )
         for target in observed_targets
     ]
-    if observed_target_state != expected_target_state:
+    expected_input_state = [
+        (item.logical_path, item.sha256, item.existed, item.mode)
+        for item in planning_result.input_documents
+    ]
+    observed_input_state = [
+        (item.logical_path, item.sha256, item.existed, item.mode) for item in observed_inputs
+    ]
+    if (
+        observed_target_state != expected_target_state
+        or observed_input_state != expected_input_state
+    ):
         fail(
             "source_drift",
             "Configured target bytes changed during plan generation; generate a new plan",
@@ -3083,13 +3202,18 @@ def create_plan(
     post_overrides = {
         target.path: (
             proposed[target.logical_path].encode("utf-8"),
-            target.existed or proposed[target.logical_path].encode("utf-8") != target.content_bytes,
+            target.existed
+            or proposed[target.logical_path].encode("utf-8") != target.archived_preimage_bytes,
         )
         for target in result.targets
     }
     if build_import_graph(config).public_dict() != import_graph_before:
         fail("import_graph_drift", "Claude import graph changed during plan generation")
-    import_graph_after = build_import_graph(config, overrides=post_overrides).public_dict()
+    import_graph_after = build_import_graph(
+        config,
+        overrides=post_overrides,
+        include_writable_roots=True,
+    ).public_dict()
     target_metrics, aggregate_metrics = _plan_metrics(result, proposed, normalized, config)
     summary_metrics = {
         key: aggregate_metrics[key]
@@ -3122,7 +3246,10 @@ def create_plan(
         and operator_decision is None
         and len(writable_changes) + len(normalized_suggestions) <= 2
         and all(
-            change.get("action") == "replace"
+            (
+                change.get("action") == "replace"
+                or change.get("source_only_duplicate_removal") is True
+            )
             and not _CONSEQUENTIAL_INSTRUCTION_CHANGE.search(
                 "\n".join(
                     [
@@ -3300,10 +3427,20 @@ def create_plan(
         atomic_write(run_dir / "evidence.json", packet_bytes)
         targets_manifest: list[dict[str, Any]] = []
         for target in result.targets:
-            blob = run_dir / "blobs" / target.sha256
+            semantic_blob = run_dir / "blobs" / target.sha256
+            if not semantic_blob.exists():
+                atomic_write(semantic_blob, target.content_bytes)
+            if sha256_bytes(semantic_blob.read_bytes()) != target.sha256:
+                fail(
+                    "archive_integrity",
+                    f"Failed to verify semantic input for {target.logical_path}",
+                )
+            preimage_bytes = target.archived_preimage_bytes
+            preimage_sha256 = target.archived_preimage_sha256
+            blob = run_dir / "blobs" / preimage_sha256
             if not blob.exists():
-                atomic_write(blob, target.content_bytes)
-            if sha256_bytes(blob.read_bytes()) != target.sha256:
+                atomic_write(blob, preimage_bytes)
+            if sha256_bytes(blob.read_bytes()) != preimage_sha256:
                 fail(
                     "archive_integrity",
                     f"Failed to verify archived pre-image for {target.logical_path}",
@@ -3323,16 +3460,34 @@ def create_plan(
                     "path": str(target.path),
                     "logical_path": target.logical_path,
                     "existed": target.existed,
-                    "changed": target.content_bytes != post_bytes,
+                    "changed": preimage_bytes != post_bytes,
                     "mode": target.mode,
-                    "pre_sha256": target.sha256,
+                    "semantic_sha256": target.sha256,
+                    "semantic_blob": f"blobs/{target.sha256}",
+                    "pre_sha256": preimage_sha256,
                     "post_sha256": post_hash,
-                    "pre_blob": f"blobs/{target.sha256}",
+                    "pre_blob": f"blobs/{preimage_sha256}",
                     "post_blob": f"proposals/{post_hash}",
                     "scope_paths": list(target.scope_paths),
+                    "frontmatter_source": target.frontmatter_source or None,
+                    "secondary_frontmatter_sources": list(target.secondary_frontmatter_sources),
+                    "represented_input_sources": list(target.represented_input_sources),
                     **target_metrics[target.logical_path],
                 }
             )
+
+        inputs_manifest = [
+            {
+                "path": str(item.path),
+                "logical_path": item.logical_path,
+                "sha256": item.sha256,
+                "bytes": len(item.content_bytes),
+                "mode": item.mode,
+                "existed": item.existed,
+                "frontmatter": bool(item.frontmatter),
+            }
+            for item in result.input_documents
+        ]
 
         created_at = _now()
         recorded_provider = (
@@ -3371,6 +3526,8 @@ def create_plan(
             "decision_lineage": lineage,
             "parser_version": PARSER_VERSION,
             "config_sha256": config.hash,
+            "target_selection": deepcopy(config.target_selection),
+            "input_documents": inputs_manifest,
             "evidence_sha256": sha256_bytes(packet_bytes),
             "operations": artifact_operations,
             "targets": targets_manifest,
@@ -3393,6 +3550,8 @@ def create_plan(
             "plan_sha256": plan_sha,
             "packet_sha256": sha256_bytes(packet_bytes),
             "config_sha256": config.hash,
+            "target_selection": deepcopy(config.target_selection),
+            "input_documents": inputs_manifest,
             "parser_version": PARSER_VERSION,
             "provider": recorded_provider,
             "model": recorded_model,

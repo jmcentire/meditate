@@ -351,8 +351,8 @@ def test_public_docs_explain_fixed_point_typed_output_and_behavioral_oracle() ->
     combined = index + "\n" + llms_full
 
     assert re.search(r"analyst prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?5\b", combined)
-    assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?17\b", combined)
-    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?33\b", combined)
+    assert re.search(r"drafter prompt(?:\s+(?:contract|version))?\s*[:=]?\s*v?18\b", combined)
+    assert re.search(r"parser(?:\s+(?:contract|version))?\s*[:=]?\s*v?34\b", combined)
     assert re.search(
         r"summar(?:y|ies).{0,180}(?:deterministic|locally computed|validated data)|"
         r"(?:deterministic|locally computed).{0,180}summar(?:y|ies)",

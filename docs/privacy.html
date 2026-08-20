@@ -50,15 +50,16 @@
       <p><code>meditate decide</code> transmits the frozen parent context and exact selected archived option or byte-preserved custom response, plus bounded decision lineage, to Anthropic instead of transmitting newly appended live history. Anthropic's response becomes a fresh read-only successor plan. The input is recorded as operator-asserted user authority, but identity is not authenticated or attested, and Meditate cannot prove that an invoking agent faithfully relayed the user's real answer. <code>meditate decide</code> rejects a recognized high-confidence secret shape in a custom response before submission. Other option/custom text remains user-derived and is not anonymous or risk-free.</p>
 
       <h2>What the CLI may read</h2>
-      <p>Only configured sources are eligible:</p>
+      <p>Configured sources and operator-selected repeatable <code>--target</code> files are eligible:</p>
       <ul>
         <li>allowlisted Claude Code and Codex instruction files;</li>
         <li>Claude and Codex prompt indexes and, when explicitly enabled, bounded transcript records;</li>
         <li>agent auto-memory or configured memory files;</li>
         <li>active Kindex constraints, directives, decisions, and related provenance when Kindex is enabled.</li>
       </ul>
-      <p>Histories, transcripts, auto-memory, and Kindex are read-only evidence. Meditate writes only the instruction targets named in the configuration.</p>
-      <p>A locally admitted low-blast-radius plan may be applied with <code>--reversible</code> or by an explicit <code>run --apply</code>. Before writing, Meditate preserves and hash-verifies the exact pre-image; the receipt states the changed targets and <code>meditate restore RUN_ID</code>. Consequential credential, permission, hook/settings, destructive, force, or automatic remote/release/deployment changes require exact attended approval. Restore recovers instruction-file bytes, but cannot undo a downstream action performed by another process after it consumed the changed instructions.</p>
+      <p>Histories, transcripts, auto-memory, and Kindex are read-only evidence. Without <code>--output</code>, each selected target may be maintained in place. With <code>--output</code>, every input is read-only and only the output may change; the output may also be one input. Existing output content is not semantic input unless explicitly selected. The model receives the selected sanitized directives and their source paths, but it cannot invent a destination.</p>
+      <p>YAML frontmatter from the output-as-input or first input becomes the output envelope. Secondary envelopes are not merged and are reported locally.</p>
+      <p>A locally admitted low-blast-radius plan may be applied with <code>--reversible</code> or by an explicit <code>run --apply</code>. Before writing, Meditate preserves and hash-verifies the exact physical pre-image in a private content-addressed archive; the receipt states the archive, pre-image hashes, changed targets, and <code>meditate restore RUN_ID</code>. Restore removes an output that did not exist before the run. Recovery material remains until explicit purge; no adjacent <code>.bak</code> file is created. Consequential credential, permission, hook/settings, destructive, force, or automatic remote/release/deployment changes require exact attended approval. Restore recovers instruction-file bytes, but cannot undo a downstream action performed by another process after it consumed the changed instructions.</p>
 
       <h2>What can be sent to a model</h2>
       <p>Before any provider call, records are streamed through local parsing, deduplication, secret detection, redaction, deterministic ranking, temporal-breadth selection, and hard size/token limits. High-confidence secret-bearing records are excluded wholesale rather than sent with a replacement token.</p>
@@ -85,11 +86,12 @@
       <p>The Meditate CLI contains no product telemetry. This documentation site is a set of static files: it sets no cookies and loads no third-party fonts, scripts, images, or analytics. Because it is hosted by GitHub Pages, GitHub may process ordinary web-server request information under GitHub’s own privacy terms.</p>
 
       <h2>Operator responsibility</h2>
-      <p>The operator chooses the evidence sources, model provider, model ID, token budgets, retention period, writable targets, and whether <code>run --apply</code> or a direct apply command is invoked. Operators should review their model provider’s data-handling terms and avoid enabling transcript bodies unless the additional evidence is proportionate to the task.</p>
+      <p>Explicit target and output paths are operator-granted filesystem authority, not a sandbox boundary. Meditate rejects symlinks, non-regular files, and duplicate physical input aliases, but an operator can select any path their OS account may access. Same-user filesystem compromise is outside the threat boundary.</p>
+      <p>The operator chooses the evidence sources, model provider, model ID, token budgets, retention period, configured or invocation-local writable targets, and whether <code>run --apply</code> or a direct apply command is invoked. Operators should review their model provider’s data-handling terms and avoid enabling transcript bodies unless the additional evidence is proportionate to the task.</p>
 
       <h2>Questions and changes</h2>
       <p>Privacy-affecting changes should be raised in the <a href="https://github.com/jmcentire/meditate/issues">project issue tracker</a>. The source version of this policy is available as <a href="https://github.com/jmcentire/meditate/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
-      <p class="privacy-meta">Last updated: August 19, 2026 · Applies to Meditate 0.4.x</p>
+      <p class="privacy-meta">Last updated: August 19, 2026 · Applies to Meditate 0.5.x</p>
     </article>
   </main>
 

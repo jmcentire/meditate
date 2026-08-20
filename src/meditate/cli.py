@@ -16,6 +16,7 @@ from .config import (
     default_config_path,
     load_config,
     with_llm_overrides,
+    with_target_overrides,
     write_default_config,
 )
 from .cron import check_cron_environment, render_cron_entry
@@ -100,7 +101,7 @@ def _emit_decisions(value: dict[str, Any], *, as_json: bool) -> None:
 
 def _configured(args: argparse.Namespace) -> Config:
     config = load_config(args.config)
-    return with_llm_overrides(
+    config = with_llm_overrides(
         config,
         model=getattr(args, "model", None),
         effort=getattr(args, "effort", None),
@@ -109,11 +110,23 @@ def _configured(args: argparse.Namespace) -> Config:
         max_total_input_tokens=getattr(args, "max_total_input_tokens", None),
         max_total_output_tokens=getattr(args, "max_total_output_tokens", None),
     )
+    raw_targets = getattr(args, "targets", None)
+    return with_target_overrides(
+        config,
+        targets=tuple(raw_targets) if raw_targets is not None else None,
+        output=getattr(args, "output", None),
+    )
 
 
 def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, Any]:
     plan_json, plan_markdown = write_plan_report(config, plan)
-    changed_targets = _changed_target_count(config, plan.run_id)
+    manifest = _run_manifest(config, plan.run_id)
+    targets = manifest.get("targets")
+    if not isinstance(targets, list):
+        fail("archive_corrupt", f"Invalid target manifest for {plan.run_id}")
+    changed_targets = sum(
+        1 for target in targets if isinstance(target, dict) and target.get("changed", True)
+    )
     apply_command = (
         (
             f"meditate apply {plan.run_id} --reversible"
@@ -167,6 +180,12 @@ def _validated_plan_payload(config: Config, plan: ValidatedPlan) -> dict[str, An
         "post_lines": plan.metrics.get("post_lines", 0),
         "line_delta": plan.metrics.get("line_delta", 0),
         "metrics": plan.metrics,
+        "target_selection": manifest.get("target_selection"),
+        "input_documents": manifest.get("input_documents"),
+        "targets": targets,
+        "backup_archive": (
+            str(config.data_root / "runs" / plan.run_id) if changed_targets else None
+        ),
         "minimum_apply_mode": plan.minimum_apply_mode,
         "blocked_reasons": list(plan.blocked_reasons),
         "decision_request": plan.decision_request,
@@ -208,16 +227,15 @@ def _plan_payload(config: Config, *, include_inspection_report: bool) -> dict[st
     return payload
 
 
-def _changed_target_count(config: Config, run_id: str) -> int:
+def _run_manifest(config: Config, run_id: str) -> dict[str, Any]:
     path = config.data_root / "runs" / run_id / "manifest.json"
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
-        targets = manifest["targets"]
-    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
         fail("archive_corrupt", f"Cannot read target manifest for {run_id}")
-    if not isinstance(targets, list):
+    if not isinstance(manifest, dict):
         fail("archive_corrupt", f"Invalid target manifest for {run_id}")
-    return sum(1 for target in targets if isinstance(target, dict) and target.get("changed", True))
+    return manifest
 
 
 def _interactive_decision(
@@ -451,6 +469,29 @@ def _add_model_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-total-output-tokens", type=int)
 
 
+def _add_target_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--target",
+        dest="targets",
+        action="append",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "File to read as input (repeat to combine multiple files; overrides configured "
+            "targets for this run). Without --output, each input is edited in place"
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "Write the result to this file instead of editing inputs in place. Requires at "
+            "least one --target. If it is also an input, its original is archived and replaced"
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="meditate",
@@ -465,11 +506,15 @@ def build_parser() -> argparse.ArgumentParser:
     init = commands.add_parser("init", parents=[common], help="Write a commented default config")
     init.add_argument("--force", action="store_true", help="Replace an existing config")
 
-    commands.add_parser("inspect", parents=[common], help="Inspect locally without an LLM call")
+    inspect = commands.add_parser(
+        "inspect", parents=[common], help="Inspect locally without an LLM call"
+    )
+    _add_target_options(inspect)
     plan = commands.add_parser(
         "plan", parents=[common], help="Create a validated read-only proposal"
     )
     _add_model_options(plan)
+    _add_target_options(plan)
 
     verify = commands.add_parser(
         "verify",
@@ -503,6 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", parents=[common], help="Inspect and plan; dry-run by default")
     _add_model_options(run)
+    _add_target_options(run)
     run.add_argument(
         "--apply",
         action="store_true",

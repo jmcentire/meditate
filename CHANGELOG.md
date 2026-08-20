@@ -2,6 +2,78 @@
 
 All notable changes to Meditate are documented here.
 
+## 0.5.0 - 2026-08-19
+
+Meditate v0.5.0 makes instruction input a first-class invocation contract. Operators can
+maintain an arbitrary instruction or skill file in place, analyze several files together, or
+compile an ordered collection into one explicit output without first editing persistent TOML.
+The fixed point and authority model are unchanged: only locally admitted, recoverable work may
+write, and every other byte remains stable.
+
+### Added
+
+- Repeatable `--target FILE` on `inspect`, `plan`, and `run`. An explicit list replaces configured
+  targets for that invocation and may name `CLAUDE.md`, `AGENTS.md`, scoped rules, `SKILL.md`, or
+  another UTF-8 Markdown directive file.
+- Optional `--output FILE`. Without it, each selected input remains an independent writable
+  target. With it, all inputs are read-only and the output is the sole writable target.
+- Output-as-input compilation. `--target AGENTS.md --target CLAUDE.md --output AGENTS.md` archives
+  the original `AGENTS.md`, compiles both ordered bodies into it, leaves `CLAUDE.md` unchanged,
+  and restores the exact original through the normal run archive.
+- Exact input provenance. The plan packet, plan, manifest, reports, and target selection bind the
+  ordered input paths and hashes; composed directives retain their original source path.
+- Document-envelope handling. Output-as-input frontmatter wins; otherwise the first input's YAML
+  frontmatter wins. Secondary envelopes are not merged and are named in inspection and plan
+  reports.
+- Acceptance coverage for arbitrary skills, Unicode frontmatter, multi-file in-place writes,
+  distinct and overlapping outputs, new-output removal on restore, input drift, hard-link alias
+  rejection, archive reconstruction, and exact recovery.
+
+### Changed
+
+- The target-selection contract is separately hash-bound from persistent configuration. Later
+  `decide`, `apply`, and `restore` reconstruct invocation-local authority from the immutable run;
+  callers do not repeat target flags.
+- Input reads use descriptor-based no-follow checks and reject symlinks, non-regular files,
+  open-time identity changes, and multiple paths that identify the same existing file.
+- Proposal and inspection reports distinguish semantic inputs from writable targets, explicitly
+  identify output/input overlap, and state which frontmatter envelopes were omitted.
+- Repeated output-as-input compilation suppresses only a secondary document whose complete
+  directive multiset is already represented by exact raw bytes and heading path in the current
+  output. The report names the source and all input hashes remain bound, preventing recursive
+  append and empty-heading growth without semantic-similarity guesses.
+- Drafter prompt v18 (`510c166f...`)/parser v34 adds the narrow source-only
+  exact-duplicate-removal contract and
+  invalidates earlier unconsumed plans at the executable validator boundary. A model may remove
+  duplicate members without external history only when local detection confirms the duplicate
+  cluster and an identical peer remains byte-for-byte.
+
+### Recoverability and authority boundary
+
+The backup is Meditate's private content-addressed run archive, not a sibling `.bak` file. A
+changed apply reports the archive, each pre-image hash, and `meditate restore RUN_ID`; restore
+recovers an existing output or removes an output that did not exist before the run. Archives
+remain until explicit purge. Explicit CLI paths are operator authority and may point anywhere the
+OS account can access. The model cannot invent a destination, but Meditate is not a filesystem
+sandbox and same-user compromise remains outside its threat boundary.
+
+### Live release receipts
+
+- `20260820T013809Z-a65bd797` maintained a disposable `SKILL.md` in place,
+  changed `d6fbdfbe...` to `1a87ba79...`, and restored the exact original.
+- `20260820T013825Z-3ccd9834` compiled two read-only sources into a distinct
+  output, changed legacy `8220090e...` to `d363b74e...`, preserved both sources,
+  and restored the exact legacy output.
+- `20260820T013836Z-60c301c4` compiled an output-overlapping AGENTS/CLAUDE pair,
+  changed only AGENTS from `11715558...` to `37d5953b...`, preserved CLAUDE at
+  `ee0b1ef6...`, and restored AGENTS exactly. Runs `20260820T013850Z-874628d9`
+  and `20260820T013856Z-0c0593ca` then proved zero-write convergence and a
+  zero-provider-call exact repeat.
+
+The receipts used `claude-sonnet-4-6`, Drafter prompt v18/parser v34. Semantic
+verification was `not_run` or `not_applicable`; they prove the target/output,
+archive, restore, and fixed-point mechanics, not behavioral equivalence.
+
 ## 0.4.0 - 2026-08-19
 
 Meditate v0.4.0 closes the archive-only execution gap. A locally admitted,

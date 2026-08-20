@@ -4,7 +4,7 @@
 
 Build toward a locally operated behavioral-contract compiler and policy router that
 resolves identified defects in directives used by Claude Code and OpenAI Codex.
-Version 0.4 establishes two separate production boundaries: evidence-grounded
+Version 0.5 establishes two separate production boundaries: evidence-grounded
 semantic nomination, then bounded directive compilation over locally admitted
 candidates. Evidence-grounded missing rules can become reversible introductions into exact
 configured targets. Current prose is analyzed with
@@ -137,8 +137,9 @@ Meditate may discover and read:
 - Kindex: active constraints, directives, decisions, and related provenance when
   `kin` is installed and the user has not disabled it.
 
-Meditate writes only declared instruction targets. Histories, transcripts,
-auto-memory, and Kindex are evidence sources and are never silently rewritten.
+Meditate writes only configured targets or the exact invocation-local writable
+targets selected with `--target`/`--output`. Histories, transcripts, auto-memory,
+and Kindex are evidence sources and are never silently rewritten.
 Symlinked targets are refused by default so an atomic rename cannot destroy the
 link; a later explicit follow-through mode must archive both link and referent.
 
@@ -165,6 +166,79 @@ target before abstraction; an unscoped contextual relocation fails closed, and
 Meditate never invents a glob. Codex target interpretation follows the official
 [AGENTS.md loading semantics](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
 
+### Direct-target and output compilation contract
+
+`inspect`, `plan`, and `run` accept an ordered `--target FILE` flag that may be
+supplied more than once. Supplying it replaces the TOML target list for that
+invocation without changing the config file. With no `--output`, selected inputs
+are planned jointly, rendered to their own paths, and applied as one rollback-
+capable transaction; each receives its own exact pre-image. With `--output FILE`, all
+inputs are immutable evidence and the output is the sole writable target.
+
+The output may also appear once in the input list. This is deliberate in-place
+compilation: `--target AGENTS.md --target CLAUDE.md --output AGENTS.md` reads
+both, archives the original `AGENTS.md`, writes only `AGENTS.md`, and leaves
+`CLAUDE.md` unchanged. If the output is distinct, its existing bytes are a
+physical pre-image only and do not enter semantic analysis unless that path is
+also an explicit input. A new output is removed by restore.
+
+Output-as-input must terminate. On a repeated invocation, local composition
+counts directives by exact raw bytes and heading path. A secondary input is
+omitted from recomposition only when its complete multiset is already present in
+the current output input; the report names that source and the selection still
+binds its hash. This prevents recursive append and empty-heading growth without
+treating paraphrases, partial coverage, or semantic similarity as equivalence.
+
+The selection artifact binds its source (`config` or `cli`), mode, exact ordered
+absolute inputs, exact writable paths, optional output, and canonical SHA-256.
+Plans and manifests separately bind every input's bytes, mode, existence, and
+hash. `decide` replays frozen evidence and rechecks live inputs; `apply` rebuilds
+the archived authority and rechecks every input and output pre-image. Any mismatch
+aborts before the first write. Target flags are therefore not accepted or needed
+on later commands.
+
+YAML frontmatter is a document envelope, not a directive. When output overlaps
+an input, that input supplies the output envelope; otherwise the first input
+does. Input bodies retain CLI order. Secondary envelopes are not merged. The run
+succeeds with a non-blocking inspection/plan warning that names each omitted
+envelope. Every composed directive keeps its original source path in the
+model packet even though its destination is the one output target.
+
+Input reads use descriptor-based no-follow checks and compare the opened
+device/inode to the lstat snapshot. Symlinks, non-regular files, open-time
+identity changes, and multiple existing paths that identify one physical input
+fail closed. Output parents must already exist and are revalidated before write.
+
+Explicit CLI paths are operator authority, not model output. They may name any
+location permitted by the OS account. That is the intended personal/work/file-
+collection use case, not a confinement promise. The model still receives only
+opaque allowlisted destinations and cannot invent another path. Same-user
+filesystem compromise remains outside the threat boundary.
+
+The recovery contract uses the private content-addressed run archive rather than
+sibling `.bak` files. The archive retains both the composed semantic pre-image and
+physical writable pre-image when they differ. Apply receipts identify the archive,
+every pre-image hash, and `meditate restore RUN_ID`; explicit purge is the only
+normal operation that erases that recovery material.
+
+### v0.5.0 live target/output receipts
+
+On final v0.5 code, `20260820T013809Z-a65bd797` changed a disposable in-place
+`SKILL.md` from `d6fbdfbe...` to `1a87ba79...` by removing one locally confirmed
+exact duplicate, then restored the exact original. `20260820T013825Z-3ccd9834`
+compiled two read-only sources into a distinct output, replaced legacy
+`8220090e...` with `d363b74e...`, preserved both sources, and restored the legacy
+bytes. `20260820T013836Z-60c301c4` combined AGENTS plus read-only CLAUDE into
+AGENTS, changed only AGENTS from `11715558...` to `37d5953b...`, preserved CLAUDE
+at `ee0b1ef6...`, and restored AGENTS exactly. Repeat
+`20260820T013850Z-874628d9` wrote nothing; exact repeat
+`20260820T013856Z-0c0593ca` was byte-identical and made zero provider calls.
+
+These are `claude-sonnet-4-6`, Drafter prompt-v18/parser-v34 execution receipts.
+Semantic verification was `not_run` or `not_applicable`; the evidence qualifies
+target authority, write isolation, composition convergence, archive, and restore,
+not downstream behavioral equivalence.
+
 ## Command contract
 
 - `meditate init`: write a commented TOML configuration.
@@ -172,6 +246,10 @@ Meditate never invents a glob. Codex target interpretation follows the official
   statistics, potential conflicts/overlaps, and token estimate. It makes no
   claim of semantic conflict unless a deterministic rule proves one, and makes
   no model call.
+- `meditate inspect|plan|run --target FILE [--target FILE ...] [--output FILE]`:
+  override configured inputs for one invocation; plan and transactionally update
+  their own paths when no output is supplied, or compile them read-only into the
+  sole output.
 - `meditate plan`: build a sanitized evidence packet, run or replay the read-only
   semantic Analyst, optionally call the bounded Drafter, validate both structured
   outputs, and write a proposal/report. A fresh stable snapshot may use one Analyst
@@ -270,6 +348,11 @@ content; the model may reference only existing IDs and cannot mint durable IDs.
 Output plus local completion provides a disposition for every pre-image directive
 exactly once: kept, replaced, removed, relocated, or escalated. The provider sees
 only candidate IDs; local code adds all non-candidate IDs to `keep`.
+
+Removal normally requires external evidence. The sole source-only removal ground
+is narrower: deterministic preflight must confirm an exact-duplicate cluster and
+the plan must keep an identical peer byte-for-byte. Removing the whole cluster or
+removing an exception-lineage candidate without evidence still fails closed.
 
 The model returns JSON operations, not regenerated files. Unchanged spans are
 copied byte-for-byte from the pre-image. A semantic replacement is not free
@@ -731,11 +814,14 @@ call boundary.
 
 ## Release and distribution
 
-Package metadata and the runtime version are synchronized at `0.4.0`. The
+Package metadata and the runtime version are synchronized at `0.5.0`. Drafter
+prompt v18 (SHA-256 `510c166f...`)/parser `meditate-parser-v34` binds the direct
+target/output artifact contract and narrow confirmed-duplicate removal ground
+into new plans. The
 canonical public distribution surface is the versioned wheel attached to the
-`v0.4.0` GitHub Release:
+`v0.5.0` GitHub Release:
 
-`https://github.com/jmcentire/meditate/releases/download/v0.4.0/meditate_agent-0.4.0-py3-none-any.whl`
+`https://github.com/jmcentire/meditate/releases/download/v0.5.0/meditate_agent-0.5.0-py3-none-any.whl`
 
 The repository CI checks Ruff, strict mypy, pytest across supported Python
 versions, and an isolated wheel build. It does not publish. PyPI publication is

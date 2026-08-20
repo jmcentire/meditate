@@ -12,6 +12,7 @@ from helpers import (
     StageProvider,
     StubProvider,
     compiled_directive,
+    empty_compiled_directive,
     inspection,
     no_semantic_nominations,
     replace_matching,
@@ -607,6 +608,102 @@ def _duplicate_resolution(packet: dict[str, Any], *, drop_anchor: bool = False) 
         "decision_request": None,
         "unresolved_conflicts": [],
     }
+
+
+def _duplicate_removal(packet: dict[str, Any]) -> dict[str, Any]:
+    mutable = [directive for target in packet["targets"] for directive in target["directives"]]
+    assert len(mutable) == 2
+    return {
+        "schema_version": 1,
+        "keep": [mutable[0]["id"]],
+        "changes": [
+            {
+                "action": "remove",
+                "source_ids": [mutable[1]["id"]],
+                "compiled_directive": empty_compiled_directive(),
+                "destination_target": mutable[1]["target"],
+                "heading_path": mutable[1]["heading_path"],
+                "evidence_ids": [],
+                "reason": "Remove one locally confirmed exact duplicate while keeping its peer.",
+                "minimum_apply_mode": "attended",
+                "relocation_basis": "",
+                "enforcement_target": "",
+                "deterministic_check": "",
+            }
+        ],
+        "new_rule_suggestions": [],
+        "decision_request": None,
+        "unresolved_conflicts": [],
+    }
+
+
+def _remove_every_duplicate(packet: dict[str, Any]) -> dict[str, Any]:
+    raw = _duplicate_removal(packet)
+    mutable = [directive for target in packet["targets"] for directive in target["directives"]]
+    raw["keep"] = []
+    raw["changes"][0]["source_ids"] = [item["id"] for item in mutable]
+    return raw
+
+
+def _exception_lineage_removal(packet: dict[str, Any]) -> dict[str, Any]:
+    mutable = [directive for target in packet["targets"] for directive in target["directives"]]
+    assert len(mutable) == 2
+    raw = _duplicate_removal(packet)
+    raw["keep"] = [mutable[0]["id"]]
+    raw["changes"][0]["source_ids"] = [mutable[1]["id"]]
+    raw["changes"][0]["reason"] = "Remove an exception branch without external evidence."
+    return raw
+
+
+def test_confirmed_duplicate_removal_uses_source_ground_and_is_reversible(
+    config_factory: ConfigFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = "# Tests\n\n- MUST run `pytest` before commit.\n- MUST run `pytest` before commit.\n"
+    config, (target,) = config_factory((original,), target_names=("CLAUDE.md",))
+    provider = StageProvider(no_semantic_nominations, _duplicate_removal)
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
+
+    plan = create_plan(config, inspection=inspection(config, ()))
+
+    assert plan.minimum_apply_mode == "unattended"
+    assert plan.raw_plan["changes"][0]["source_only_duplicate_removal"] is True
+    apply_run(config, plan.run_id, mode="reversible")
+    assert target.read_text(encoding="utf-8").count("MUST run `pytest` before commit.") == 1
+
+
+def test_source_only_duplicate_removal_must_keep_an_identical_peer(
+    config_factory: ConfigFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = "# Tests\n\n- MUST run `pytest` before commit.\n- MUST run `pytest` before commit.\n"
+    config, _targets = config_factory((original,), target_names=("CLAUDE.md",))
+    provider = StageProvider(no_semantic_nominations, _remove_every_duplicate)
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
+
+    with pytest.raises(MeditateError, match="Change 0 needs evidence") as exc_info:
+        create_plan(config, inspection=inspection(config, ()))
+
+    assert exc_info.value.code == "missing_evidence"
+
+
+def test_exception_lineage_is_not_a_source_only_removal_ground(
+    config_factory: ConfigFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = (
+        "# Tests\n\n"
+        "- SHOULD run `pytest` before commit unless only documentation changed.\n"
+        "- SHOULD run `pytest` before commit unless no Python behavior changed.\n"
+    )
+    config, _targets = config_factory((original,), target_names=("CLAUDE.md",))
+    provider = StageProvider(no_semantic_nominations, _exception_lineage_removal)
+    monkeypatch.setattr(plan_module, "create_provider", lambda _config: provider)
+
+    with pytest.raises(MeditateError, match="Change 0 needs evidence") as exc_info:
+        create_plan(config, inspection=inspection(config, ()))
+
+    assert exc_info.value.code == "missing_evidence"
 
 
 def test_defective_fixture_corrects_once_then_reaches_byte_identical_fixed_point(
